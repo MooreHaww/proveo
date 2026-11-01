@@ -80,15 +80,18 @@ def ask_pc(prompt):
             "cost": 0.0}
 
 
-def ask_cloud(prompt, effort=None):
-    key = os.environ.get("MODEL_API_KEY")
-    if not key or os.environ.get("ALLOW_CLOUD") != "1":
+def ask_cloud(prompt, effort=None, key=None, allowed=None, url=None, model=None):
+    # key/allowed None: read MODEL_API_KEY / ALLOW_CLOUD from the environment, as before.
+    # The Eco server passes its in-memory key ("" when none) and its ALLOW_CLOUD snapshot.
+    key = os.environ.get("MODEL_API_KEY") if key is None else key
+    allowed = os.environ.get("ALLOW_CLOUD") == "1" if allowed is None else allowed
+    if not key or not allowed:
         raise SystemExit("Cloud is off. Set MODEL_API_KEY and ALLOW_CLOUD=1 in this window first.")
     effort = effort or os.environ.get("BENCH_EFFORT", router.CLOUD_EFFORT)
-    body = {"model": router.CLOUD_MODEL, "input": prompt, "max_output_tokens": 3000,
+    body = {"model": model or router.CLOUD_MODEL, "input": prompt, "max_output_tokens": 3000,
             "reasoning": {"effort": effort}}
     start = time.time()
-    r = requests.post(router.CLOUD_URL, json=body,
+    r = requests.post(url or router.CLOUD_URL, json=body,
                       headers={"Authorization": "Bearer " + key}, timeout=600)
     seconds = time.time() - start
     r.raise_for_status()

@@ -3,7 +3,9 @@
   python eco_server.py [--port 8765]
 
 Binds to 127.0.0.1 only. The cloud tier works only if ALLOW_CLOUD=1 was set when the
-server started. The API key is never returned: every response body is scrubbed for it.
+server started and the monthly budget (settings.py, budget.py) is not used up.
+The ladder comes from the saved settings. The API key is held in this process's memory only
+(POST /api/key, or MODEL_API_KEY at start); it is never returned: every response body is scrubbed.
 """
 import argparse
 import glob
@@ -17,25 +19,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import bench_coding
+import budget
+import detect
 import eco_core
-from eco_core import Tier
+import settings
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "web" / "index.html"
 DEFAULT_PORT = 8765
 TASK_GLOB = "data/coding_tasks_*.py"
+MAX_BODY = 10_000
 CLOUD_DISABLED = "cloud disabled: start the server with ALLOW_CLOUD=1 to use the cloud tier"
-
-
-def cloud_minimal_tier():
-    return Tier("cloud", "cloud", lambda prompt: bench_coding.ask_cloud(prompt, effort="minimal"))
-
-
-def default_ladder():
-    """Pi -> PC -> cloud at minimal effort, the ladder measured in the README."""
-    return [Tier("pi", "local", bench_coding.ask_pi),
-            Tier("pc", "local", bench_coding.ask_pc),
-            cloud_minimal_tier()]
+NO_CLOUD_TIER = "no cloud tier is enabled in the settings"
+PROVIDERS = {"meta": "tested", "openai_compatible": "UNTESTED"}
 
 
 def measured_numbers():
@@ -66,13 +62,14 @@ def measured_numbers():
 
 
 class EcoApp:
-    def __init__(self, task_files=None, ladder=default_ladder, cloud_tier=cloud_minimal_tier,
+    def __init__(self, task_files=None, ladder=None, cloud_tier=None,
                  log_path=eco_core.LOG_PATH, allow_cloud=None, measured=measured_numbers,
                  memory_path=None):
+        """ladder() and cloud_tier() default to the saved settings; tests pass fake ones."""
         files = task_files if task_files is not None else sorted(glob.glob(TASK_GLOB))
         self.task_files = {Path(f).name: f for f in files}
-        self.ladder = ladder
-        self.cloud_tier = cloud_tier
+        self.ladder = ladder or self.settings_ladder
+        self.cloud_tier = cloud_tier or self.settings_cloud_tier
         self.log_path = log_path
         self.allow_cloud = os.environ.get("ALLOW_CLOUD") == "1" if allow_cloud is None else allow_cloud
         self.measured = measured
@@ -80,6 +77,59 @@ class EcoApp:
         self.started = datetime.now(timezone.utc)
         self.jobs = {}
         self.lock = threading.Lock()
+        # The API key lives only here, in process memory. Every key ever set is kept (in memory)
+        # so that responses and logs stay scrubbed of it after it is replaced.
+        self._key = os.environ.get("MODEL_API_KEY", "")
+        self._seen_keys = {self._key} if self._key else set()
+
+    def set_key(self, key):
+        with self.lock:
+            self._key = key or ""
+            if key:
+                self._seen_keys.add(key)
+        return self.key_status()
+
+    def key_status(self):
+        return {"set": bool(self._key)}
+
+    def secrets(self):
+        with self.lock:
+            return sorted(self._seen_keys)
+
+    def settings_ladder(self):
+        return eco_core.build_tiers(settings.load(), key=self._key, allow_cloud=self.allow_cloud)
+
+    def settings_cloud_tier(self):
+        """Eco off: the first enabled cloud tier, or None."""
+        return next((t for t in self.settings_ladder() if t.kind == "cloud"), None)
+
+    def settings_view(self):
+        return {**settings.load(), "key_set": bool(self._key), "max_tiers": settings.MAX_TIERS,
+                "providers": PROVIDERS}
+
+    def save_settings(self, req):
+        if not isinstance(req, dict) or set(req) - {"tiers", "budget"}:
+            raise ValueError("send only tiers and/or budget (the API key is set with POST /api/key)")
+        current = settings.load() if not {"tiers", "budget"} <= set(req) else {}
+        settings.save({"tiers": req.get("tiers", current.get("tiers")),
+                       "budget": req.get("budget", current.get("budget"))}, secrets=self.secrets())
+        return self.settings_view()
+
+    def budget_status(self, pending=0.0):
+        state = budget.status(settings.load()["budget"], self.log_path, pending=pending)
+        return {**state, "reason": budget.block_reason(state)}
+
+    def cloud_reason(self, pending=0.0):
+        """Empty if a cloud tier may be called now, else why not. Checked before every cloud call."""
+        if not self.allow_cloud:
+            return CLOUD_DISABLED
+        return self.budget_status(pending)["reason"]
+
+    def detect(self, address=None):
+        if address:
+            found = detect.probe_address(address)
+            return {"address": detect.normalize_address(address), "servers": [found] if found else []}
+        return {"servers": detect.detect_local()}
 
     def load_tasks(self, name):
         return {t["id"]: t for t in bench_coding.load_tasks(self.task_files[name])}
@@ -102,14 +152,20 @@ class EcoApp:
         job = {"id": uuid.uuid4().hex[:12], "task_file": task_file, "task_id": task_id, "eco": eco,
                "status": "running", "current": None, "attempts": [], "skipped": [],
                "result": None, "message": ""}
+        if eco:
+            tiers = self.ladder()
+        else:
+            # Eco off means cloud only. If the cloud may not be called (ALLOW_CLOUD off, budget
+            # used up, no cloud tier) the job ends at once: nothing is called or logged.
+            cloud = self.cloud_tier()
+            reason = NO_CLOUD_TIER if cloud is None else self.cloud_reason()
+            if reason:
+                job.update(status="done", skipped=[cloud.name if cloud else "cloud"], message=reason)
+            tiers = [cloud]
         with self.lock:
             self.jobs[job["id"]] = job
-        if not eco and not self.allow_cloud:
-            # Eco off means cloud only; with the cloud disabled nothing is called or logged.
-            with self.lock:
-                job.update(status="done", skipped=["cloud"], message=CLOUD_DISABLED)
+        if job["status"] == "done":
             return job["id"]
-        tiers = self.ladder() if eco else [self.cloud_tier()]
         memory = self.memory_path if eco else None  # Eco off is the plain cloud path, no memory
         threading.Thread(target=self._run, args=(job, task, tiers, memory), daemon=True).start()
         return job["id"]
@@ -137,10 +193,14 @@ class EcoApp:
             result = eco_core.solve(task["prompt"], task["tests"], task["entry"], tiers,
                                     task_id=task["id"], log_path=self.log_path,
                                     allow_cloud=self.allow_cloud, on_start=on_start, on_attempt=on_attempt,
-                                    memory_path=memory_path)
+                                    memory_path=memory_path, cloud_check=self.cloud_reason,
+                                    secrets=self.secrets())
+            message = ""
+            if result["skipped"]:
+                message = CLOUD_DISABLED if not self.allow_cloud else result.get("skip_reason", "")
             with self.lock:
                 job.update(status="done", current=None, result=result, skipped=result["skipped"],
-                           message=CLOUD_DISABLED if result["skipped"] else "")
+                           message=message)
         except BaseException as e:  # keep the job visible instead of losing the thread
             with self.lock:
                 job.update(status="error", current=None, message="error: " + repr(e))
@@ -178,13 +238,14 @@ class EcoApp:
                 "session_started": self.started.isoformat(timespec="seconds")}
 
 
-def scrub(body):
-    """Remove the API key from a response body if it ever appears in it."""
-    key = os.environ.get("MODEL_API_KEY", "")
-    if len(key) >= 8:
-        for form in {key, json.dumps(key)[1:-1]}:
-            body = body.replace(form, "[redacted]")
-    return body
+def scrub(body, secrets=()):
+    """Remove the API key (MODEL_API_KEY and any key set in memory) from a response body."""
+    return eco_core.redact(body, secrets)
+
+
+def valid_key(key):
+    return (isinstance(key, str) and 8 <= len(key) <= 512 and key.isprintable()
+            and not any(c.isspace() for c in key))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -198,8 +259,19 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return self.headers.get("Host") in {f"127.0.0.1:{port}", f"localhost:{port}"}
 
+    def _origin_ok(self):
+        port = self.server.server_address[1]
+        origin = self.headers.get("Origin")
+        return not origin or origin in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
+
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY:
+            raise ValueError("request body too large")
+        return json.loads(self.rfile.read(length) or b"{}")
+
     def _send(self, status, body, ctype):
-        data = scrub(body).encode("utf-8")
+        data = scrub(body, self.app.secrets()).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
@@ -217,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._host_ok():
             return self._json({"error": "bad host"}, 403)
+        if not self._origin_ok():
+            return self._json({"error": "bad origin"}, 403)
         path = self.path.split("?", 1)[0]
         try:
             if path in ("/", "/index.html"):
@@ -231,6 +305,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.measured())
             if path == "/api/memory":
                 return self._json(self.app.memory_state())
+            if path == "/api/settings":
+                return self._json(self.app.settings_view())
+            if path == "/api/budget":
+                return self._json(self.app.budget_status())
+            if path == "/api/key/status":
+                return self._json(self.app.key_status())
             if path.startswith("/api/jobs/"):
                 job = self.app.job_state(path[len("/api/jobs/"):])
                 return self._json(job) if job else self._json({"error": "no such job"}, 404)
@@ -241,23 +321,35 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._host_ok():
             return self._json({"error": "bad host"}, 403)
-        origin = self.headers.get("Origin")
-        port = self.server.server_address[1]
-        if origin and origin not in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}:
+        if not self._origin_ok():
             return self._json({"error": "bad origin"}, 403)
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._json({"error": "send JSON"}, 415)
-        if self.path == "/api/memory/clear":
-            return self._json(self.app.clear_memory())
-        if self.path != "/api/solve":
+        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/detect", "/api/key"}
+        if self.path not in routes:
             return self._json({"error": "not found"}, 404)
         try:
-            length = min(int(self.headers.get("Content-Length") or 0), 10_000)
-            req = json.loads(self.rfile.read(length) or b"{}")
+            req = self._read_json()
+            if not isinstance(req, dict):
+                raise ValueError("send a JSON object")
+            if self.path == "/api/memory/clear":
+                return self._json(self.app.clear_memory())
+            if self.path == "/api/settings":
+                return self._json(self.app.save_settings(req))
+            if self.path == "/api/detect":
+                return self._json(self.app.detect(req.get("address")))
+            if self.path == "/api/key":
+                # The key is never echoed, not even in an error message.
+                if set(req) != {"key"} or not (req["key"] is None or valid_key(req["key"])):
+                    raise ValueError('send {"key": "<8-512 printable characters, no spaces>"} '
+                                     'or {"key": null} to forget it')
+                return self._json(self.app.set_key(req["key"]))
             job_id = self.app.start_job(str(req.get("task_file", "")), str(req.get("task_id", "")),
                                         bool(req.get("eco", True)))
         except (ValueError, json.JSONDecodeError) as e:
             return self._json({"error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"error": repr(e)}, 500)
         self._json({"job_id": job_id}, 202)
 
     def log_request(self, code="-", size="-"):
@@ -299,6 +391,9 @@ def main():
                          f"running? Stop it, or start this one with --port <other port>.")
     print(f"Eco mode demo: http://127.0.0.1:{args.port}   cloud: "
           f"{'enabled (minimal effort)' if app.allow_cloud else 'disabled (set ALLOW_CLOUD=1 before starting)'}",
+          flush=True)
+    print(f"Settings: {settings.settings_path()}"
+          f"{'' if os.path.exists(settings.settings_path()) else ' (not saved yet: using the default ladder)'}",
           flush=True)
     print("Press Ctrl+C to stop.", flush=True)
     try:

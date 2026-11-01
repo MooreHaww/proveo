@@ -20,3 +20,5 @@ venv/
 Thumbs.db
 # Verified answers (holds user code)
 results/eco_memory.jsonl
+# Eco settings (tiers, budget); ECO_DATA_DIR defaults here
+user_data/

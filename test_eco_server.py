@@ -39,14 +39,21 @@ def fake(name, reply, kind="local", gate=None, error=None):
 
 
 class ServerCase(unittest.TestCase):
-    def start(self, ladder, cloud, allow_cloud=False, measured=None, memory=False):
+    def start(self, ladder=None, cloud=None, allow_cloud=False, measured=None, memory=False):
+        """ladder/cloud None: the server builds them from the saved settings (temp ECO_DATA_DIR)."""
         self.tmp = tempfile.TemporaryDirectory()
+        # Never read the real user_data/ settings; restored by hand in tearDown.
+        self._old_data_dir = os.environ.get("ECO_DATA_DIR")
+        self.data_dir = os.path.join(self.tmp.name, "user_data")
+        os.environ["ECO_DATA_DIR"] = self.data_dir
         task_path = os.path.join(self.tmp.name, "coding_tasks_fake.py")
         with open(task_path, "w", encoding="utf-8") as f:
             f.write(TASK_FILE)
         self.log = os.path.join(self.tmp.name, "eco_log.jsonl")
         self.memory = os.path.join(self.tmp.name, "eco_memory.jsonl") if memory else None
-        app = eco_server.EcoApp(task_files=[task_path], ladder=lambda: ladder, cloud_tier=lambda: cloud,
+        app = eco_server.EcoApp(task_files=[task_path],
+                                ladder=None if ladder is None else (lambda: ladder),
+                                cloud_tier=None if cloud is None else (lambda: cloud),
                                 log_path=self.log, allow_cloud=allow_cloud,
                                 measured=measured or (lambda: {"local_share": 0.5}),
                                 memory_path=self.memory)
@@ -59,6 +66,10 @@ class ServerCase(unittest.TestCase):
             self.server.shutdown()
             self.server.server_close()
         if hasattr(self, "tmp"):
+            if self._old_data_dir is None:
+                os.environ.pop("ECO_DATA_DIR", None)
+            else:
+                os.environ["ECO_DATA_DIR"] = self._old_data_dir
             self.tmp.cleanup()
 
     def request(self, path, body=None, headers=None):

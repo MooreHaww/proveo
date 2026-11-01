@@ -1,6 +1,7 @@
 """Eco mode core: run a coding task up a ladder of models and stop at the first that passes its tests.
 
-Cloud tiers are skipped unless ALLOW_CLOUD=1. Every solve appends one JSON line to the cost log.
+Cloud tiers are skipped unless ALLOW_CLOUD=1 (and, in the server, while the budget allows).
+Every solve appends one JSON line to the cost log.
 """
 import csv
 import glob
@@ -22,6 +23,9 @@ CLOUD_MINIMAL_GLOB = "results/coding_cloud_minimal_*.csv"
 CLOUD_IN_PER_M = 1.25   # USD per million input tokens, same price as bench_coding.ask_cloud
 CLOUD_OUT_PER_M = 4.25  # USD per million output tokens
 LOCAL_PORTS = {11434: "Ollama", 8080: "llama.cpp", 8081: "llama.cpp", 1234: "LM Studio"}
+CLOUD_OFF_REASON = "cloud disabled (ALLOW_CLOUD is not 1)"
+LOCAL_MAX_TOKENS = 500   # same as bench_coding.ask_pi / ask_pc
+CLOUD_MAX_TOKENS = 1500  # openai_compatible cloud tiers; router.CLOUD_MAX_OUTPUT_TOKENS
 
 
 @dataclass
@@ -43,6 +47,74 @@ def default_tiers():
     ]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # never resend a request (and its Authorization header) somewhere else
+
+
+_LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+_CLOUD_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def ask_openai_chat(base_url, model, prompt, disable_thinking=False, key=None, max_tokens=LOCAL_MAX_TOKENS,
+                    price_in_per_m=0.0, price_out_per_m=0.0, local=True, timeout=600):
+    """POST {base_url}/chat/completions on any OpenAI-compatible server (llama.cpp, Ollama, LM Studio).
+
+    Same body, timeout and bookkeeping as bench_coding.ask_pi/ask_pc, plus the model name.
+    disable_thinking sends chat_template_kwargs enable_thinking=false, exactly like ask_pc.
+    """
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens, "temperature": 0}
+    if disable_thinking:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode("utf-8"),
+                                 headers=headers, method="POST")
+    start = time.time()
+    with (_LOCAL_OPENER if local else _CLOUD_OPENER).open(req, timeout=timeout) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    usage = data.get("usage") or {}
+    tin, tout = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    return {"text": data["choices"][0]["message"]["content"],
+            "seconds": time.time() - start,
+            "in_tokens": tin,
+            "out_tokens": tout,
+            "cost": tin * price_in_per_m / 1e6 + tout * price_out_per_m / 1e6}
+
+
+def tier_from_config(cfg, key="", allow_cloud=None):
+    """One Tier from a settings entry (see settings.py). Tier.name is the settings id."""
+    flags = cfg.get("flags", {})
+    if cfg["kind"] == "local":
+        # Local and LAN servers never receive the cloud key.
+        def ask(prompt):
+            return ask_openai_chat(cfg["base_url"], cfg["model"], prompt,
+                                   disable_thinking=flags.get("disable_thinking", False))
+    elif cfg.get("provider") == "meta":
+        def ask(prompt):
+            return bench_coding.ask_cloud(prompt, effort=flags.get("effort"), key=key, allowed=allow_cloud,
+                                          url=cfg["base_url"] + "/responses", model=cfg["model"])
+    else:
+        # UNTESTED: provider "openai_compatible" for a cloud endpoint. Never called against a real
+        # service during development; only fake servers in the tests.
+        def ask(prompt):
+            allowed = os.environ.get("ALLOW_CLOUD") == "1" if allow_cloud is None else allow_cloud
+            if not key or not allowed:
+                raise SystemExit("Cloud is off. Set an API key and ALLOW_CLOUD=1 first.")
+            return ask_openai_chat(cfg["base_url"], cfg["model"], prompt,
+                                   disable_thinking=flags.get("disable_thinking", False), key=key,
+                                   max_tokens=CLOUD_MAX_TOKENS, price_in_per_m=cfg["price_in_per_m"],
+                                   price_out_per_m=cfg["price_out_per_m"], local=False)
+    return Tier(cfg["id"], cfg["kind"], ask)
+
+
+def build_tiers(config, key="", allow_cloud=None):
+    """The enabled tiers of a settings dict, in order."""
+    return [tier_from_config(t, key, allow_cloud) for t in config["tiers"] if t.get("enabled", True)]
+
+
 def check(code, task):
     """Run the task's tests on code. Returns (passed_all, error)."""
     result = bench_coding.run_tests(code, task)
@@ -51,17 +123,21 @@ def check(code, task):
 
 
 def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
-          allow_cloud=None, on_start=None, on_attempt=None, memory_path=None):
+          allow_cloud=None, on_start=None, on_attempt=None, memory_path=None,
+          cloud_check=None, secrets=()):
     """Try each tier in order and stop at the first answer that passes all tests.
 
     allow_cloud: None reads ALLOW_CLOUD from the environment. on_start(tier_name) and
     on_attempt(attempt) are optional callbacks so a caller can show progress live.
     memory_path: a verified-memory JSONL file, or None to run without memory.
+    cloud_check(pending_cloud_cost) runs before each cloud tier and returns "" to allow it or
+    the reason it is skipped (the budget guard). secrets are redacted from the log and memory.
     """
     if allow_cloud is None:
         allow_cloud = os.environ.get("ALLOW_CLOUD") == "1"
     task = {"entry": entry, "tests": tests}
     attempts, skipped = [], []
+    skip_reason = ""
     solved_by = None
     passing_code = None
 
@@ -71,7 +147,7 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             on_start("memory")
         start = time.time()
         stored = memory_lookup(key, memory_path)
-        attempt = {"tier": "memory", "memory": "miss", "passed": False, "seconds": 0.0, "in_tokens": 0,
+        attempt = {"tier": "memory", "kind": "memory", "memory": "miss", "passed": False, "seconds": 0.0, "in_tokens": 0,
                    "out_tokens": 0, "cost_usd": 0.0, "error": ""}
         if stored is not None:
             # Re-verify on every reuse: a stored answer is trusted only if it passes now.
@@ -88,13 +164,17 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             solved_by = "memory"
 
     for tier in tiers if solved_by is None else []:
-        if tier.kind == "cloud" and not allow_cloud:
-            skipped.append(tier.name)
-            continue
+        if tier.kind == "cloud":
+            pending = sum(a["cost_usd"] for a in attempts if a.get("kind") == "cloud")
+            reason = CLOUD_OFF_REASON if not allow_cloud else (cloud_check(pending) if cloud_check else "")
+            if reason:
+                skipped.append(tier.name)
+                skip_reason = skip_reason or reason
+                continue
         if on_start:
             on_start(tier.name)
         start = time.time()
-        attempt = {"tier": tier.name, "passed": False, "seconds": 0.0, "in_tokens": 0,
+        attempt = {"tier": tier.name, "kind": tier.kind, "passed": False, "seconds": 0.0, "in_tokens": 0,
                    "out_tokens": 0, "cost_usd": 0.0, "error": ""}
         try:
             reply = tier.ask(prompt)
@@ -125,7 +205,7 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             break
 
     if key and passing_code is not None:
-        memory_store(key, passing_code, solved_by, attempts[-1]["seconds"], memory_path)
+        memory_store(key, passing_code, solved_by, attempts[-1]["seconds"], memory_path, secrets)
 
     solved_tier = next((t for t in tiers if t.name == solved_by), None)
     local_solve = solved_by == "memory" or (solved_tier is not None and solved_tier.kind == "local")
@@ -139,15 +219,30 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
         "seconds": round(sum(a["seconds"] for a in attempts), 2),
         "estimated_cloud_cost_avoided_usd": round(avoided, 6),
     }
-    write_log(out, log_path)
+    if skipped:
+        out["skip_reason"] = skip_reason
+    write_log(out, log_path, secrets)
     return out
 
 
-def write_log(result, log_path=LOG_PATH):
+def _secrets(extra=()):
+    found = {s for s in (*extra, os.environ.get("MODEL_API_KEY", "")) if s and len(s) >= 8}
+    return sorted(found, key=len, reverse=True)
+
+
+def redact(text, secrets=()):
+    """Replace each secret (raw or JSON-escaped) with [redacted]. MODEL_API_KEY is always included."""
+    for secret in _secrets(secrets):
+        for form in {secret, json.dumps(secret)[1:-1]}:
+            text = text.replace(form, "[redacted]")
+    return text
+
+
+def write_log(result, log_path=LOG_PATH, secrets=()):
     line = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **result}
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(line) + "\n")
+        f.write(redact(json.dumps(line), secrets) + "\n")
 
 
 def memory_key(prompt, tests, entry):
@@ -170,13 +265,12 @@ def memory_lookup(key, path=MEMORY_PATH):
     return found
 
 
-def memory_store(key, code, tier, seconds, path=MEMORY_PATH):
+def memory_store(key, code, tier, seconds, path=MEMORY_PATH, secrets=()):
     """Append a verified solution. Callers store only code that passed all its tests.
 
     Returns False and stores nothing if the code contains the cloud API key.
     """
-    api_key = os.environ.get("MODEL_API_KEY", "")
-    if len(api_key) >= 8 and api_key in code:
+    if redact(code, secrets) != code:
         return False
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     line = {"key": key, "code": code, "tier": tier, "seconds": seconds,
