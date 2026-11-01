@@ -11,12 +11,14 @@ import argparse
 import glob
 import json
 import os
+import re
 import socket
 import threading
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote
 
 import bench_coding
 import budget
@@ -26,6 +28,14 @@ import settings
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "web" / "index.html"
+ASSETS = HERE / "web" / "assets"
+# Only these files are served from /assets/: one plain file name, no folders.
+ASSET_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
+ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}(\.[A-Za-z0-9_-]{1,16})*\.(svg|png|ico)$")
+PAGE_CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+            "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'")
+# An SVG opened directly could carry script: assets get no script and a sandbox.
+ASSET_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
 DEFAULT_PORT = 8765
 TASK_GLOB = "data/coding_tasks_*.py"
 MAX_BODY = 10_000
@@ -109,8 +119,10 @@ class EcoApp:
         return next((t for t in self.settings_ladder() if t.kind == "cloud"), None)
 
     def settings_view(self):
+        # saved: False until the settings file exists (the page shows its first-run card).
         return {**settings.load(), "key_set": bool(self._key), "max_tiers": settings.MAX_TIERS,
-                "providers": PROVIDERS}
+                "providers": PROVIDERS, "saved": os.path.exists(settings.settings_path()),
+                "defaults": settings.default_settings()["tiers"]}
 
     def save_settings(self, req):
         if not isinstance(req, dict) or set(req) - {"tiers", "budget"}:
@@ -269,6 +281,27 @@ def scrub(body, secrets=()):
     return eco_core.redact(body, secrets)
 
 
+def asset_file(raw_name, folder=None):
+    """The Path of an allowed file directly inside web/assets/, or None.
+
+    raw_name is the URL path after /assets/ (still percent-encoded). Anything with a folder,
+    a dot segment, an unusual character or another extension is refused, and the resolved
+    path must still sit directly in the assets folder (so a link pointing elsewhere is refused too).
+    """
+    folder = Path(folder or ASSETS)
+    name = unquote(raw_name)
+    if not ASSET_NAME.match(name) or ".." in name:
+        return None
+    try:
+        root = folder.resolve()
+        path = (folder / name).resolve()
+    except (OSError, ValueError):
+        return None
+    if path.parent != root or not path.is_file():
+        return None
+    return path
+
+
 def valid_key(key):
     return (isinstance(key, str) and 8 <= len(key) <= 512 and key.isprintable()
             and not any(c.isspace() for c in key))
@@ -296,18 +329,25 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError(f"request body too large: {length:,} bytes (the limit is {limit:,})")
         return json.loads(self.rfile.read(length) or b"{}")
 
-    def _send(self, status, body, ctype):
-        data = scrub(body, self.app.secrets()).encode("utf-8")
+    def _send(self, status, body, ctype, csp=PAGE_CSP):
+        """body is text (scrubbed for the API key) or bytes (a PNG or ICO asset)."""
+        data = body if isinstance(body, bytes) else scrub(body, self.app.secrets()).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy",
-                         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-                         "connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'")
+        self.send_header("Content-Security-Policy", csp)
         self.end_headers()
         self.wfile.write(data)
+
+    def _asset(self, raw_name):
+        path = asset_file(raw_name)
+        if path is None:
+            return self._json({"error": "not found"}, 404)
+        ctype = ASSET_TYPES[path.suffix.lower()]
+        body = path.read_text(encoding="utf-8") if path.suffix.lower() == ".svg" else path.read_bytes()
+        self._send(200, body, ctype + ("; charset=utf-8" if isinstance(body, str) else ""), ASSET_CSP)
 
     def _json(self, obj, status=200):
         self._send(status, json.dumps(obj), "application/json; charset=utf-8")
@@ -321,6 +361,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 return self._send(200, PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+            if path.startswith("/assets/"):
+                return self._asset(path[len("/assets/"):])
             if path == "/api/config":
                 return self._json({"cloud_enabled": self.app.allow_cloud, "cloud_effort": "minimal"})
             if path == "/api/tasks":
