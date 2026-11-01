@@ -39,15 +39,17 @@ def fake(name, reply, kind="local", gate=None, error=None):
 
 
 class ServerCase(unittest.TestCase):
-    def start(self, ladder, cloud, allow_cloud=False, measured=None):
+    def start(self, ladder, cloud, allow_cloud=False, measured=None, memory=False):
         self.tmp = tempfile.TemporaryDirectory()
         task_path = os.path.join(self.tmp.name, "coding_tasks_fake.py")
         with open(task_path, "w", encoding="utf-8") as f:
             f.write(TASK_FILE)
         self.log = os.path.join(self.tmp.name, "eco_log.jsonl")
+        self.memory = os.path.join(self.tmp.name, "eco_memory.jsonl") if memory else None
         app = eco_server.EcoApp(task_files=[task_path], ladder=lambda: ladder, cloud_tier=lambda: cloud,
                                 log_path=self.log, allow_cloud=allow_cloud,
-                                measured=measured or (lambda: {"local_share": 0.5}))
+                                measured=measured or (lambda: {"local_share": 0.5}),
+                                memory_path=self.memory)
         self.server = eco_server.make_server(app, port=0)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"

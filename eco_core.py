@@ -4,6 +4,7 @@ Cloud tiers are skipped unless ALLOW_CLOUD=1. Every solve appends one JSON line 
 """
 import csv
 import glob
+import hashlib
 import json
 import os
 import statistics
@@ -16,6 +17,7 @@ from typing import Callable
 import bench_coding
 
 LOG_PATH = "results/eco_log.jsonl"
+MEMORY_PATH = "results/eco_memory.jsonl"
 CLOUD_MINIMAL_GLOB = "results/coding_cloud_minimal_*.csv"
 CLOUD_IN_PER_M = 1.25   # USD per million input tokens, same price as bench_coding.ask_cloud
 CLOUD_OUT_PER_M = 4.25  # USD per million output tokens
@@ -41,19 +43,51 @@ def default_tiers():
     ]
 
 
+def check(code, task):
+    """Run the task's tests on code. Returns (passed_all, error)."""
+    result = bench_coding.run_tests(code, task)
+    error = result.get("error", "")
+    return (not error and result.get("passed", 0) == result.get("total", len(task["tests"]))), error
+
+
 def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
-          allow_cloud=None, on_start=None, on_attempt=None):
+          allow_cloud=None, on_start=None, on_attempt=None, memory_path=None):
     """Try each tier in order and stop at the first answer that passes all tests.
 
     allow_cloud: None reads ALLOW_CLOUD from the environment. on_start(tier_name) and
     on_attempt(attempt) are optional callbacks so a caller can show progress live.
+    memory_path: a verified-memory JSONL file, or None to run without memory.
     """
     if allow_cloud is None:
         allow_cloud = os.environ.get("ALLOW_CLOUD") == "1"
     task = {"entry": entry, "tests": tests}
     attempts, skipped = [], []
     solved_by = None
-    for tier in tiers:
+    passing_code = None
+
+    key = memory_key(prompt, tests, entry) if memory_path else None
+    if key:
+        if on_start:
+            on_start("memory")
+        start = time.time()
+        stored = memory_lookup(key, memory_path)
+        attempt = {"tier": "memory", "memory": "miss", "passed": False, "seconds": 0.0, "in_tokens": 0,
+                   "out_tokens": 0, "cost_usd": 0.0, "error": ""}
+        if stored is not None:
+            # Re-verify on every reuse: a stored answer is trusted only if it passes now.
+            ok, error = check(stored["code"], task)
+            if ok:
+                attempt.update(memory="hit", passed=True, stored_tier=stored.get("tier"))
+            else:
+                attempt["error"] = "stored answer failed the re-check" + (f": {error}" if error else "")
+        attempt["seconds"] = round(time.time() - start, 2)
+        attempts.append(attempt)
+        if on_attempt:
+            on_attempt(attempt)
+        if attempt["passed"]:
+            solved_by = "memory"
+
+    for tier in tiers if solved_by is None else []:
         if tier.kind == "cloud" and not allow_cloud:
             skipped.append(tier.name)
             continue
@@ -79,19 +113,23 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
         else:
             text = reply
             attempt["cost_usd"] = tier.cost_per_call
-        result = bench_coding.run_tests(bench_coding.extract_code(text), task)
+        code = bench_coding.extract_code(text)
+        attempt["passed"], attempt["error"] = check(code, task)
         attempt["seconds"] = round(time.time() - start, 2)
-        attempt["error"] = result.get("error", "")
-        attempt["passed"] = not attempt["error"] and result.get("passed", 0) == result.get("total", len(tests))
         attempts.append(attempt)
         if on_attempt:
             on_attempt(attempt)
         if attempt["passed"]:
             solved_by = tier.name
+            passing_code = code
             break
 
+    if key and passing_code is not None:
+        memory_store(key, passing_code, solved_by, attempts[-1]["seconds"], memory_path)
+
     solved_tier = next((t for t in tiers if t.name == solved_by), None)
-    avoided = estimate_cloud_cost(prompt) if solved_tier is not None and solved_tier.kind == "local" else 0.0
+    local_solve = solved_by == "memory" or (solved_tier is not None and solved_tier.kind == "local")
+    avoided = estimate_cloud_cost(prompt) if local_solve else 0.0
     out = {
         "task_id": task_id,
         "solved_by": solved_by,
@@ -110,6 +148,56 @@ def write_log(result, log_path=LOG_PATH):
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(line) + "\n")
+
+
+def memory_key(prompt, tests, entry):
+    """SHA-256 of the exact prompt, tests and entry point. Any change is a different key."""
+    blob = json.dumps({"prompt": prompt, "tests": tests, "entry": entry},
+                      sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=repr)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def memory_lookup(key, path=MEMORY_PATH):
+    """Latest stored entry for key, or None. Later lines replace earlier ones."""
+    found = None
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    entry = json.loads(line)
+                    if entry.get("key") == key:
+                        found = entry
+    return found
+
+
+def memory_store(key, code, tier, seconds, path=MEMORY_PATH):
+    """Append a verified solution. Callers store only code that passed all its tests.
+
+    Returns False and stores nothing if the code contains the cloud API key.
+    """
+    api_key = os.environ.get("MODEL_API_KEY", "")
+    if len(api_key) >= 8 and api_key in code:
+        return False
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    line = {"key": key, "code": code, "tier": tier, "seconds": seconds,
+            "stored_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(line) + "\n")
+    return True
+
+
+def memory_count(path=MEMORY_PATH):
+    """Number of distinct tasks with a stored solution."""
+    keys = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            keys = {json.loads(line).get("key") for line in f if line.strip()}
+    return len(keys)
+
+
+def clear_memory(path=MEMORY_PATH):
+    if os.path.exists(path):
+        os.remove(path)
 
 
 def median_cloud_minimal_out_tokens(pattern=CLOUD_MINIMAL_GLOB):

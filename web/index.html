@@ -11,6 +11,7 @@
     --cmin: #3A9AD9;
     --chigh: #0B3C8C;
     --amber: #C98500;
+    --slate: #3F4A5A;
     --ink: #1B1B1F;
     --muted: #55555F;
     --line: #E2E1DA;
@@ -113,6 +114,37 @@
   .step.fail .badge { color: var(--ink); border-color: var(--ink); }
   .step.skipped, .step.bypassed, .step.notneeded { opacity: .55; }
   .step.skipped .badge, .step.bypassed .badge, .step.notneeded .badge { border-style: dashed; }
+
+  /* Memory strip: rung 0, same visual language as the rungs */
+  .memory {
+    --c: var(--slate);
+    background: var(--card); border: 2px solid var(--line); border-top: 10px solid var(--c); border-radius: var(--radius);
+    padding: 14px 20px; margin-bottom: 16px;
+    display: grid; grid-template-columns: minmax(170px, auto) auto 1fr auto; gap: 6px 24px; align-items: center;
+    transition: background .25s, border-color .25s, opacity .25s;
+  }
+  .memory .rung { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+  .memory .name { font-size: 1.35rem; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+  .memory .name i { width: 16px; height: 16px; border-radius: 4px; background: var(--c); display: inline-block; }
+  .memory .badge { align-self: center; }
+  .memory .metrics { margin-top: 4px; }
+  .memory .mem-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; text-align: right; }
+  .memory .mem-count { font-weight: 700; font-size: 0.95rem; }
+  .memory .mem-hint { grid-column: 1 / -1; margin: 2px 0 0; }
+  .memory.waiting .badge, .memory.miss .badge, .memory.off .badge, .memory.bypassed .badge { border-style: dashed; }
+  .memory.running { border-color: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent); }
+  .memory.running .badge { color: var(--ink); }
+  .memory.running .badge svg { animation: spin 1.1s linear infinite; }
+  .memory.pass { background: color-mix(in srgb, var(--c) 10%, #fff); border-color: var(--c); }
+  .memory.pass .badge { color: #fff; background: var(--slate); border-color: var(--slate); }
+  .memory.miss .badge { color: var(--ink); }
+  .memory.off, .memory.bypassed { opacity: .6; }
+  .ghost-btn {
+    font: inherit; font-size: 0.85rem; font-weight: 700; color: var(--ink); background: #fff;
+    border: 2px solid var(--slate); border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  }
+  .ghost-btn:hover { background: color-mix(in srgb, var(--slate) 8%, #fff); }
+  .ghost-btn:disabled { opacity: .5; cursor: default; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .summary { margin: 16px 0 0; font-size: 1.15rem; font-weight: 700; min-height: 1.6em; }
@@ -167,6 +199,8 @@
 
   @media (max-width: 900px) {
     html { font-size: 17px; }
+    .memory { grid-template-columns: 1fr; }
+    .memory .mem-side { align-items: flex-start; text-align: left; }
     .ladder { grid-template-columns: 1fr; gap: 0; }
     .arrow { height: 40px; transform: rotate(90deg); }
     .two, .calc { grid-template-columns: 1fr; }
@@ -210,6 +244,22 @@
 
   <section aria-labelledby="ladderTitle">
     <h2 id="ladderTitle">The ladder</h2>
+    <div class="memory waiting" data-tier="memory">
+      <div>
+        <div class="rung">Rung 0 · verified memory</div>
+        <div class="name"><i aria-hidden="true"></i>Memory</div>
+      </div>
+      <div class="badge"></div>
+      <div>
+        <p class="detail"></p>
+        <div class="metrics"></div>
+      </div>
+      <div class="mem-side">
+        <span class="mem-count num" id="memCount" aria-live="polite"></span>
+        <button class="ghost-btn" id="clearMem" type="button">Clear memory</button>
+      </div>
+      <p class="hint mem-hint">Exact repeats only. Stored answers are re-checked against the tests every time.</p>
+    </div>
     <div class="ladder" id="ladder">
       <div class="step waiting" data-tier="pi">
         <div class="rung">Rung 1 · local</div>
@@ -306,11 +356,11 @@
     arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
   };
   const TIERS = ["pi", "pc", "cloud"];
-  const NAMES = { pi: "Pi", pc: "PC", cloud: "Cloud", none: "None" };
-  const COLORS = { pi: "var(--pi)", pc: "var(--pc)", cloud: "var(--cmin)", none: "#B9B8B0" };
+  const NAMES = { memory: "Memory", pi: "Pi", pc: "PC", cloud: "Cloud", none: "None" };
+  const COLORS = { memory: "var(--slate)", pi: "var(--pi)", pc: "var(--pc)", cloud: "var(--cmin)", none: "#B9B8B0" };
   const $ = (id) => document.getElementById(id);
   const money = (v) => "$" + Number(v || 0).toFixed(6);
-  const state = { eco: true, cloud: false, tasks: [], measuredShare: null, polling: null };
+  const state = { eco: true, cloud: false, memory: false, tasks: [], measuredShare: null, polling: null };
 
   document.querySelectorAll(".arrow").forEach((a) => { a.innerHTML = ICON.arrow; });
 
@@ -329,8 +379,8 @@
   }
 
   function setStep(tier, cls, label, icon, detail, attempt) {
-    const el = document.querySelector(`.step[data-tier="${tier}"]`);
-    el.className = "step " + cls;
+    const el = document.querySelector(`[data-tier="${tier}"]`);
+    el.className = (tier === "memory" ? "memory " : "step ") + cls;
     const badge = el.querySelector(".badge");
     badge.innerHTML = ICON[icon];
     const t = document.createElement("span"); t.textContent = label; badge.appendChild(t);
@@ -338,14 +388,27 @@
     const m = el.querySelector(".metrics");
     m.replaceChildren();
     if (attempt) {
-      for (const [k, v] of [["Time", attempt.seconds.toFixed(1) + " s"], ["Cost", money(attempt.cost_usd)], ["Tokens out", String(attempt.out_tokens)]]) {
+      let rows = [["Time", attempt.seconds.toFixed(1) + " s"], ["Cost", money(attempt.cost_usd)], ["Tokens out", String(attempt.out_tokens)]];
+      if (tier === "memory") {
+        rows = attempt.passed
+          ? [["Time", attempt.seconds.toFixed(1) + " s"], ["Cost", money(0)], ["First solved by", NAMES[attempt.stored_tier] || "?"]]
+          : [["Time", attempt.seconds.toFixed(1) + " s"]];
+      }
+      for (const [k, v] of rows) {
         const d = document.createElement("div"); d.textContent = k;
         const b = document.createElement("b"); b.className = "num"; b.textContent = v; d.appendChild(b); m.appendChild(d);
       }
     }
   }
 
+  function memoryIdle() {
+    if (!state.eco) setStep("memory", "bypassed", "BYPASSED", "skip", "Eco mode is off");
+    else if (!state.memory) setStep("memory", "off", "OFF", "skip", "Memory is off on this server");
+    else setStep("memory", "waiting", "WAITING", "wait", "Checked first, before any model runs");
+  }
+
   function resetLadder() {
+    memoryIdle();
     for (const t of TIERS) {
       if (!state.eco && t !== "cloud") setStep(t, "bypassed", "BYPASSED", "skip", "Eco mode is off");
       else if (t === "cloud" && !state.cloud) setStep(t, "waiting", "LOCKED", "lock", "Cloud disabled on this server");
@@ -359,6 +422,15 @@
   function render(job) {
     const solvedAt = job.attempts.findIndex((a) => a.passed);
     const order = job.eco ? TIERS : ["cloud"];
+    const mem = job.attempts.find((x) => x.tier === "memory");
+    const fromMemory = !!(mem && mem.passed);
+    if (!job.eco) setStep("memory", "bypassed", "BYPASSED", "skip", "Eco mode is off");
+    else if (mem && mem.passed) setStep("memory", "pass", "HIT", "check", "From memory, re-checked against the tests", mem);
+    else if (mem) setStep("memory", "miss", "MISS", "skip",
+                          mem.error ? "Stored answer failed the re-check, so it was ignored. Running the ladder."
+                                    : "No verified answer for this exact task. Running the ladder.", mem);
+    else if (job.current === "memory") setStep("memory", "running", "CHECKING", "spin", "Looking for a verified answer…");
+    else memoryIdle();
     for (const t of TIERS) {
       const a = job.attempts.find((x) => x.tier === t);
       if (!order.includes(t)) setStep(t, "bypassed", "BYPASSED", "skip", "Eco mode is off");
@@ -366,7 +438,8 @@
                           a.passed ? "All tests passed" : (a.error ? a.error : "Tests failed"), a);
       else if (job.current === t) setStep(t, "running", "RUNNING", "spin", "Generating and testing…");
       else if (job.skipped.includes(t)) setStep(t, "skipped", "SKIPPED", "lock", "Cloud disabled on this server");
-      else if (solvedAt >= 0 || job.status !== "running") setStep(t, "notneeded", "NOT NEEDED", "skip", "A cheaper rung passed");
+      else if (solvedAt >= 0 || job.status !== "running") setStep(t, "notneeded", "NOT NEEDED", "skip",
+                                                                  fromMemory ? "Answered from memory" : "A cheaper rung passed");
       else setStep(t, "waiting", "WAITING", "wait", "");
     }
     document.querySelectorAll(".arrow").forEach((el) => {
@@ -374,12 +447,15 @@
       el.classList.toggle("on", !!(a && !a.passed));
     });
     if (job.status === "running") {
-      $("summary").textContent = job.current ? `Trying ${NAMES[job.current]}…` : "Starting…";
+      $("summary").textContent = job.current === "memory" ? "Checking memory…"
+        : job.current ? `Trying ${NAMES[job.current]}…` : "Starting…";
     } else if (job.status === "error") {
       $("summary").textContent = "Something went wrong.";
     } else if (job.result) {
       const r = job.result;
-      $("summary").textContent = r.solved_by
+      $("summary").textContent = r.solved_by === "memory"
+        ? `Answered from memory, re-checked against the tests, in ${r.seconds.toFixed(1)} s · cost ${money(0)} · cloud cost avoided ${money(r.estimated_cloud_cost_avoided_usd)} (estimate)`
+        : r.solved_by
         ? `Solved by ${NAMES[r.solved_by]} in ${r.seconds.toFixed(1)} s · actual cost ${money(r.cost_usd)} · cloud cost avoided ${money(r.estimated_cloud_cost_avoided_usd)} (estimate)`
         : `No rung passed the tests · ${r.seconds.toFixed(1)} s · actual cost ${money(r.cost_usd)}`;
     } else {
@@ -397,6 +473,7 @@
     $("runBtn").disabled = false;
     $("runBtn").textContent = "Run";
     loadStats();
+    loadMemory();
   }
 
   async function run() {
@@ -440,11 +517,11 @@
       const by = s.session.solved_by, total = s.session.tasks_run;
       const bar = $("solvedBar"), legend = $("solvedLegend");
       bar.replaceChildren(); legend.replaceChildren();
-      for (const k of ["pi", "pc", "cloud", "none"]) {
+      for (const k of ["memory", "pi", "pc", "cloud", "none"]) {
         const n = by[k] || 0;
         if (total && n) { const seg = document.createElement("span"); seg.style.width = (100 * n / total) + "%"; seg.style.background = COLORS[k]; bar.appendChild(seg); }
         const l = document.createElement("span"); const i = document.createElement("i"); i.style.background = COLORS[k];
-        l.append(i, `${k === "none" ? "Not solved" : "Solved by " + NAMES[k]}: ${n}`); legend.appendChild(l);
+        l.append(i, `${k === "none" ? "Not solved" : k === "memory" ? "From memory" : "Solved by " + NAMES[k]}: ${n}`); legend.appendChild(l);
       }
       const a = s.all_time;
       $("allTime").textContent = `All runs in ${s.log}: ${a.tasks_run} task${a.tasks_run === 1 ? "" : "s"}, ${money(a.estimated_cloud_cost_avoided_usd)} avoided (estimate), ${money(a.cost_usd)} actual cloud cost.`;
@@ -538,6 +615,27 @@
     $("preview").textContent = o && o.dataset.preview ? o.dataset.preview : "";
   }
 
+  async function loadMemory() {
+    try {
+      const m = await getJSON("/api/memory");
+      state.memory = m.enabled;
+      $("memCount").textContent = !m.enabled ? "Memory off"
+        : `${m.count} verified solution${m.count === 1 ? "" : "s"} stored`;
+      $("clearMem").hidden = !m.enabled;
+      $("clearMem").disabled = !m.count;
+    } catch (e) {
+      $("memCount").textContent = "Memory state unavailable";
+    }
+  }
+
+  async function clearMemory() {
+    $("clearMem").disabled = true;
+    try {
+      await getJSON("/api/memory/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } catch (e) { notice("Could not clear memory: " + e.message); }
+    loadMemory();
+  }
+
   async function loadConfig() {
     try {
       const c = await getJSON("/api/config");
@@ -552,11 +650,12 @@
 
   $("ecoSwitch").addEventListener("click", () => setEco(!state.eco));
   $("runBtn").addEventListener("click", run);
+  $("clearMem").addEventListener("click", clearMemory);
   $("taskSelect").addEventListener("change", showPreview);
   $("spend").addEventListener("input", updateCalc);
   $("share").addEventListener("input", updateCalc);
 
-  loadConfig().then(() => setEco(true));
+  Promise.all([loadConfig(), loadMemory()]).then(() => setEco(true));
   loadTasks();
   loadStats();
   loadMeasured();

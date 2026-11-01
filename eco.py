@@ -3,6 +3,9 @@
   python eco.py discover                      list local OpenAI-compatible servers on localhost
   python eco.py solve <task_file> <task_id>   run one benchmark task up the ladder
 
+Verified memory (results/eco_memory.jsonl) is checked first: exact repeats only, and a
+stored answer is re-checked against the tests every time it is reused.
+
 The cloud tier is off unless ALLOW_CLOUD=1 is set in this window.
 """
 import os
@@ -32,9 +35,13 @@ def cmd_solve(task_file, task_id):
     tiers = eco_core.default_tiers()
     print(f"Ladder: pi ({router.LOCAL_URL}) -> pc ({bench_coding.PC_URL}) -> cloud "
           f"({'on' if os.environ.get('ALLOW_CLOUD') == '1' else 'off, set ALLOW_CLOUD=1 to enable'})")
-    result = eco_core.solve(task["prompt"], task["tests"], task["entry"], tiers, task_id=task_id)
+    result = eco_core.solve(task["prompt"], task["tests"], task["entry"], tiers, task_id=task_id,
+                            memory_path=eco_core.MEMORY_PATH)
     for a in result["attempts"]:
-        status = "PASS" if a["passed"] else "FAIL"
+        if a["tier"] == "memory":
+            status = "HIT (re-checked against the tests)" if a["passed"] else "MISS"
+        else:
+            status = "PASS" if a["passed"] else "FAIL"
         print(f"  {a['tier']:<6} {status}  {a['seconds']:.1f}s  {a['out_tokens']} out tokens  "
               f"${a['cost_usd']:.6f}" + (f"  {a['error']}" if a["error"] else ""))
     for name in result["skipped"]:

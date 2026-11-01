@@ -67,7 +67,8 @@ def measured_numbers():
 
 class EcoApp:
     def __init__(self, task_files=None, ladder=default_ladder, cloud_tier=cloud_minimal_tier,
-                 log_path=eco_core.LOG_PATH, allow_cloud=None, measured=measured_numbers):
+                 log_path=eco_core.LOG_PATH, allow_cloud=None, measured=measured_numbers,
+                 memory_path=None):
         files = task_files if task_files is not None else sorted(glob.glob(TASK_GLOB))
         self.task_files = {Path(f).name: f for f in files}
         self.ladder = ladder
@@ -75,6 +76,7 @@ class EcoApp:
         self.log_path = log_path
         self.allow_cloud = os.environ.get("ALLOW_CLOUD") == "1" if allow_cloud is None else allow_cloud
         self.measured = measured
+        self.memory_path = memory_path  # None: no verified memory
         self.started = datetime.now(timezone.utc)
         self.jobs = {}
         self.lock = threading.Lock()
@@ -108,10 +110,20 @@ class EcoApp:
                 job.update(status="done", skipped=["cloud"], message=CLOUD_DISABLED)
             return job["id"]
         tiers = self.ladder() if eco else [self.cloud_tier()]
-        threading.Thread(target=self._run, args=(job, task, tiers), daemon=True).start()
+        memory = self.memory_path if eco else None  # Eco off is the plain cloud path, no memory
+        threading.Thread(target=self._run, args=(job, task, tiers, memory), daemon=True).start()
         return job["id"]
 
-    def _run(self, job, task, tiers):
+    def memory_state(self):
+        enabled = self.memory_path is not None
+        return {"enabled": enabled, "count": eco_core.memory_count(self.memory_path) if enabled else 0}
+
+    def clear_memory(self):
+        if self.memory_path is not None:
+            eco_core.clear_memory(self.memory_path)
+        return self.memory_state()
+
+    def _run(self, job, task, tiers, memory_path=None):
         def on_start(name):
             with self.lock:
                 job["current"] = name
@@ -124,7 +136,8 @@ class EcoApp:
         try:
             result = eco_core.solve(task["prompt"], task["tests"], task["entry"], tiers,
                                     task_id=task["id"], log_path=self.log_path,
-                                    allow_cloud=self.allow_cloud, on_start=on_start, on_attempt=on_attempt)
+                                    allow_cloud=self.allow_cloud, on_start=on_start, on_attempt=on_attempt,
+                                    memory_path=memory_path)
             with self.lock:
                 job.update(status="done", current=None, result=result, skipped=result["skipped"],
                            message=CLOUD_DISABLED if result["skipped"] else "")
@@ -216,6 +229,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.stats())
             if path == "/api/measured":
                 return self._json(self.app.measured())
+            if path == "/api/memory":
+                return self._json(self.app.memory_state())
             if path.startswith("/api/jobs/"):
                 job = self.app.job_state(path[len("/api/jobs/"):])
                 return self._json(job) if job else self._json({"error": "no such job"}, 404)
@@ -232,6 +247,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "bad origin"}, 403)
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._json({"error": "send JSON"}, 415)
+        if self.path == "/api/memory/clear":
+            return self._json(self.app.clear_memory())
         if self.path != "/api/solve":
             return self._json({"error": "not found"}, 404)
         try:
@@ -274,7 +291,7 @@ def main():
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = parser.parse_args()
     os.chdir(HERE)  # data/ and results/ paths are relative to the repo root
-    app = EcoApp()
+    app = EcoApp(memory_path=eco_core.MEMORY_PATH)
     try:
         server = make_server(app, args.port)
     except OSError as e:
