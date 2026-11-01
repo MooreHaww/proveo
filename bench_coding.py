@@ -80,12 +80,13 @@ def ask_pc(prompt):
             "cost": 0.0}
 
 
-def ask_cloud(prompt):
+def ask_cloud(prompt, effort=None):
     key = os.environ.get("MODEL_API_KEY")
     if not key or os.environ.get("ALLOW_CLOUD") != "1":
         raise SystemExit("Cloud is off. Set MODEL_API_KEY and ALLOW_CLOUD=1 in this window first.")
+    effort = effort or os.environ.get("BENCH_EFFORT", router.CLOUD_EFFORT)
     body = {"model": router.CLOUD_MODEL, "input": prompt, "max_output_tokens": 3000,
-            "reasoning": {"effort": os.environ.get("BENCH_EFFORT", router.CLOUD_EFFORT)}}
+            "reasoning": {"effort": effort}}
     start = time.time()
     r = requests.post(router.CLOUD_URL, json=body,
                       headers={"Authorization": "Bearer " + key}, timeout=600)

@@ -41,24 +41,35 @@ def default_tiers():
     ]
 
 
-def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH):
-    """Try each tier in order and stop at the first answer that passes all tests."""
+def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
+          allow_cloud=None, on_start=None, on_attempt=None):
+    """Try each tier in order and stop at the first answer that passes all tests.
+
+    allow_cloud: None reads ALLOW_CLOUD from the environment. on_start(tier_name) and
+    on_attempt(attempt) are optional callbacks so a caller can show progress live.
+    """
+    if allow_cloud is None:
+        allow_cloud = os.environ.get("ALLOW_CLOUD") == "1"
     task = {"entry": entry, "tests": tests}
     attempts, skipped = [], []
     solved_by = None
     for tier in tiers:
-        if tier.kind == "cloud" and os.environ.get("ALLOW_CLOUD") != "1":
+        if tier.kind == "cloud" and not allow_cloud:
             skipped.append(tier.name)
             continue
+        if on_start:
+            on_start(tier.name)
         start = time.time()
         attempt = {"tier": tier.name, "passed": False, "seconds": 0.0, "in_tokens": 0,
                    "out_tokens": 0, "cost_usd": 0.0, "error": ""}
         try:
             reply = tier.ask(prompt)
-        except Exception as e:  # an unreachable or broken tier counts as a failed attempt
+        except (Exception, SystemExit) as e:  # an unreachable or broken tier counts as a failed attempt
             attempt["seconds"] = round(time.time() - start, 2)
             attempt["error"] = "ask: " + repr(e)
             attempts.append(attempt)
+            if on_attempt:
+                on_attempt(attempt)
             continue
         if isinstance(reply, dict):
             text = reply["text"]
@@ -73,6 +84,8 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH):
         attempt["error"] = result.get("error", "")
         attempt["passed"] = not attempt["error"] and result.get("passed", 0) == result.get("total", len(tests))
         attempts.append(attempt)
+        if on_attempt:
+            on_attempt(attempt)
         if attempt["passed"]:
             solved_by = tier.name
             break
