@@ -29,6 +29,11 @@ PAGE = HERE / "web" / "index.html"
 DEFAULT_PORT = 8765
 TASK_GLOB = "data/coding_tasks_*.py"
 MAX_BODY = 10_000
+# /api/solve may carry a custom task: 4,000 + 10,000 characters, which JSON escaping can grow.
+MAX_SOLVE_BODY = 64_000
+CUSTOM_FIELDS = {"prompt", "entry", "tests_code"}
+CUSTOM_CHECK_NOTE = ("NOT a real sandbox: the answer and your tests run together in a separate Python "
+                     "process with a 10 s time limit; the answer's code is screened for risky words first")
 CLOUD_DISABLED = "cloud disabled: start the server with ALLOW_CLOUD=1 to use the cloud tier"
 NO_CLOUD_TIER = "no cloud tier is enabled in the settings"
 PROVIDERS = {"meta": "tested", "openai_compatible": "UNTESTED"}
@@ -143,15 +148,36 @@ class EcoApp:
                             "preview": first if len(first) <= 120 else first[:117] + "..."})
         return out
 
-    def start_job(self, task_file, task_id, eco):
-        if task_file not in self.task_files:
-            raise ValueError("unknown task_file")
-        task = self.load_tasks(task_file).get(task_id)
-        if task is None:
-            raise ValueError("unknown task_id")
-        job = {"id": uuid.uuid4().hex[:12], "task_file": task_file, "task_id": task_id, "eco": eco,
+    @staticmethod
+    def custom_task(custom):
+        """A user's own task from the request. Its tests run in run_custom_tests, NOT a real sandbox."""
+        if not isinstance(custom, dict):
+            raise ValueError("custom must be an object with prompt, entry and tests_code")
+        missing, extra = CUSTOM_FIELDS - set(custom), set(custom) - CUSTOM_FIELDS
+        if missing:
+            raise ValueError("custom is missing " + ", ".join(sorted(missing)))
+        if extra:
+            raise ValueError("custom has unknown field(s) " + ", ".join(sorted(extra))
+                             + "; send only prompt, entry and tests_code")
+        return eco_core.make_custom_task(custom["prompt"], custom["entry"], custom["tests_code"])
+
+    def start_job(self, task_file, task_id, eco, custom=None):
+        """Benchmark task (task_file, task_id), or a custom task when custom is given."""
+        if custom is not None:
+            task = self.custom_task(custom)
+            task_file, task_id = None, task["id"]
+        else:
+            if task_file not in self.task_files:
+                raise ValueError("unknown task_file")
+            task = self.load_tasks(task_file).get(task_id)
+            if task is None:
+                raise ValueError("unknown task_id")
+        job = {"id": uuid.uuid4().hex[:12], "task_file": task_file, "task_id": task_id,
+               "custom": custom is not None, "eco": eco,
                "status": "running", "current": None, "attempts": [], "skipped": [],
                "result": None, "message": ""}
+        if custom is not None:
+            job["check_note"] = CUSTOM_CHECK_NOTE
         if eco:
             tiers = self.ladder()
         else:
@@ -190,11 +216,11 @@ class EcoApp:
                 job["current"] = None
 
         try:
-            result = eco_core.solve(task["prompt"], task["tests"], task["entry"], tiers,
+            result = eco_core.solve(task["prompt"], task.get("tests"), task["entry"], tiers,
                                     task_id=task["id"], log_path=self.log_path,
                                     allow_cloud=self.allow_cloud, on_start=on_start, on_attempt=on_attempt,
                                     memory_path=memory_path, cloud_check=self.cloud_reason,
-                                    secrets=self.secrets())
+                                    secrets=self.secrets(), tests_code=task.get("tests_code"))
             message = ""
             if result["skipped"]:
                 message = CLOUD_DISABLED if not self.allow_cloud else result.get("skip_reason", "")
@@ -264,10 +290,10 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return not origin or origin in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
 
-    def _read_json(self):
+    def _read_json(self, limit=MAX_BODY):
         length = int(self.headers.get("Content-Length") or 0)
-        if length > MAX_BODY:
-            raise ValueError("request body too large")
+        if length > limit:
+            raise ValueError(f"request body too large: {length:,} bytes (the limit is {limit:,})")
         return json.loads(self.rfile.read(length) or b"{}")
 
     def _send(self, status, body, ctype):
@@ -329,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path not in routes:
             return self._json({"error": "not found"}, 404)
         try:
-            req = self._read_json()
+            req = self._read_json(MAX_SOLVE_BODY if self.path == "/api/solve" else MAX_BODY)
             if not isinstance(req, dict):
                 raise ValueError("send a JSON object")
             if self.path == "/api/memory/clear":
@@ -344,8 +370,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError('send {"key": "<8-512 printable characters, no spaces>"} '
                                      'or {"key": null} to forget it')
                 return self._json(self.app.set_key(req["key"]))
-            job_id = self.app.start_job(str(req.get("task_file", "")), str(req.get("task_id", "")),
-                                        bool(req.get("eco", True)))
+            if "custom" in req:
+                if "task_file" in req or "task_id" in req:
+                    raise ValueError("send either custom or task_file and task_id, not both")
+                job_id = self.app.start_job(None, None, bool(req.get("eco", True)), custom=req["custom"])
+            else:
+                job_id = self.app.start_job(str(req.get("task_file", "")), str(req.get("task_id", "")),
+                                            bool(req.get("eco", True)))
         except (ValueError, json.JSONDecodeError) as e:
             return self._json({"error": str(e)}, 400)
         except Exception as e:

@@ -17,6 +17,9 @@ PC_URL = "http://localhost:8081/v1/chat/completions"
 BLOCKED = ["import os", "from os", "import sys", "from sys", "subprocess", "shutil",
            "socket", "open(", "eval(", "exec(", "__import__", "pathlib",
            "requests", "urllib"]
+# Every benchmark prompt ends with this sentence; custom task prompts get the same ending.
+CODE_SUFFIX = " Return only the code."
+CHECK_TIMEOUT = 10  # seconds for run_custom_tests, the same limit run_tests uses
 
 HARNESS = """
 import json, sys
@@ -136,6 +139,73 @@ def run_tests(code, task):
             return json.loads(lines[-1])
         except ValueError:
             return {"error": "bad output"}
+
+
+CUSTOM_FILE = "custom_check.py"
+TESTS_HEADER = "\n\n# ---- the user's own tests ----\n"
+
+
+def _first_failure(stderr, source, tests_start):
+    """The failing assert line, or the last line of the error, at most 300 characters."""
+    err_lines = [line for line in stderr.strip().splitlines() if line.strip()]
+    last = err_lines[-1].strip() if err_lines else "the check failed with no error output"
+    frames = [int(n) for f, n in re.findall(r'File "([^"]*)", line (\d+)', stderr)
+              if os.path.basename(f) == CUSTOM_FILE]
+    src = source.splitlines()
+
+    def where(n):
+        text = src[n - 1].strip() if 0 < n <= len(src) else ""
+        if n >= tests_start:
+            return f"tests line {n - tests_start + 1}: {text}"
+        return f"answer line {n}: {text}"
+
+    if frames and last.startswith("AssertionError"):
+        msg = last[len("AssertionError"):].lstrip(": ").strip()
+        text = where(frames[-1]) + (f" ({msg})" if msg else "")
+    elif frames:
+        tests = [n for n in frames if n >= tests_start]
+        text = last + (f" (at {where(tests[0])})" if tests else f" (at {where(frames[-1])})")
+    else:
+        text = last
+    return text[:300]
+
+
+def run_custom_tests(code, tests_code, timeout=CHECK_TIMEOUT):
+    """Check model code against the user's own assert-based tests_code.
+
+    NOT a real sandbox: the code runs in a separate `python -I` process in a fresh temp
+    directory with a time limit, and the model's code (never the user's tests) is screened with
+    the same BLOCKED substring filter as run_tests. That stops accidents, not a determined attacker.
+    Pass = exit code 0 AND a random end marker printed after the last test, so an answer that
+    calls exit() before the tests run does not count as a pass.
+    Returns {"passed", "error", "first_failure"}.
+    """
+    for bad in BLOCKED:
+        if bad in code:
+            return {"passed": False, "error": "blocked: " + bad,
+                    "first_failure": f"the answer was rejected before running: it contains {bad!r}"}
+    marker = "ECO_TESTS_DONE_" + os.urandom(8).hex()
+    head = code.rstrip() + TESTS_HEADER
+    tests_start = head.count("\n") + 1
+    source = (head + tests_code.rstrip() + "\n\nimport sys as _eco_sys\n"
+              f"_eco_sys.stdout.write('\\n{marker}\\n')\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, CUSTOM_FILE), "w", encoding="utf-8") as f:
+            f.write(source)
+        try:
+            p = subprocess.run([sys.executable, "-I", CUSTOM_FILE], cwd=tmp, stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return {"passed": False, "error": "timeout",
+                    "first_failure": f"timed out after {timeout} s (an infinite loop?)"}
+    finished = p.stdout.rstrip().endswith(marker)
+    if p.returncode == 0 and finished:
+        return {"passed": True, "error": "", "first_failure": ""}
+    if p.returncode == 0:
+        return {"passed": False, "error": "tests did not finish",
+                "first_failure": "the answer's code exited before the tests finished"}
+    return {"passed": False, "error": "tests failed", "first_failure": _first_failure(p.stderr, source, tests_start)}
 
 
 def main():

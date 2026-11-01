@@ -3,10 +3,12 @@
 Cloud tiers are skipped unless ALLOW_CLOUD=1 (and, in the server, while the budget allows).
 Every solve appends one JSON line to the cost log.
 """
+import ast
 import csv
 import glob
 import hashlib
 import json
+import keyword
 import os
 import statistics
 import time
@@ -26,6 +28,8 @@ LOCAL_PORTS = {11434: "Ollama", 8080: "llama.cpp", 8081: "llama.cpp", 1234: "LM 
 CLOUD_OFF_REASON = "cloud disabled (ALLOW_CLOUD is not 1)"
 LOCAL_MAX_TOKENS = 500   # same as bench_coding.ask_pi / ask_pc
 CLOUD_MAX_TOKENS = 1500  # openai_compatible cloud tiers; router.CLOUD_MAX_OUTPUT_TOKENS
+CUSTOM_PROMPT_MAX = 4_000   # characters
+CUSTOM_TESTS_MAX = 10_000   # characters
 
 
 @dataclass
@@ -122,11 +126,66 @@ def check(code, task):
     return (not error and result.get("passed", 0) == result.get("total", len(task["tests"]))), error
 
 
+def check_detail(code, task):
+    """(passed_all, error, first_failure) for a benchmark task or a custom task (has tests_code)."""
+    if task.get("tests_code") is not None:
+        r = bench_coding.run_custom_tests(code, task["tests_code"])
+        return r["passed"], r["error"], r["first_failure"]
+    ok, error = check(code, task)
+    return ok, error, ""
+
+
+def custom_prompt(prompt):
+    """The user's prompt plus the benchmark's ending, so models are asked the same way."""
+    text = prompt.strip()
+    return text if text.endswith(bench_coding.CODE_SUFFIX.strip()) else text + bench_coding.CODE_SUFFIX
+
+
+def custom_task_id(prompt, entry, tests_code):
+    """'custom:' plus the first 8 hex characters of the memory key (prompt as sent to the models)."""
+    return "custom:" + memory_key(prompt, None, entry, tests_code)[:8]
+
+
+def make_custom_task(prompt, entry, tests_code):
+    """Validate a user's own task. Returns {id, prompt, entry, tests_code}; raises ValueError in plain words.
+
+    tests_code is the user's own Python (plain assert statements, any imports allowed). It is
+    only parsed here, never run; it runs later next to each answer, in run_custom_tests.
+    """
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("prompt is empty: describe what the function should do")
+    if len(prompt) > CUSTOM_PROMPT_MAX:
+        raise ValueError(f"prompt is too long: {len(prompt):,} characters (the limit is {CUSTOM_PROMPT_MAX:,})")
+    if not isinstance(entry, str) or not entry.isidentifier() or keyword.iskeyword(entry):
+        raise ValueError("entry must be the name of the function to test, like is_palindrome "
+                         "(letters, digits and _, not starting with a digit)")
+    if not isinstance(tests_code, str) or not tests_code.strip():
+        raise ValueError(f"tests_code is empty: add assert lines such as assert {entry}(...) == ...")
+    if len(tests_code) > CUSTOM_TESTS_MAX:
+        raise ValueError(f"tests_code is too long: {len(tests_code):,} characters "
+                         f"(the limit is {CUSTOM_TESTS_MAX:,})")
+    try:
+        tree = ast.parse(tests_code)
+    except SyntaxError as e:
+        raise ValueError(f"tests_code is not valid Python (line {e.lineno}: {e.msg})")
+    nodes = list(ast.walk(tree))
+    if not any(isinstance(n, ast.Assert) for n in nodes):
+        raise ValueError(f"tests_code has no assert statement: add lines such as assert {entry}(...) == ...")
+    if not any(isinstance(n, ast.Name) and n.id == entry for n in nodes):
+        raise ValueError(f"tests_code never calls {entry}, so it cannot test it")
+    sent = custom_prompt(prompt)
+    return {"id": custom_task_id(sent, entry, tests_code), "prompt": sent, "entry": entry,
+            "tests_code": tests_code}
+
+
 def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
           allow_cloud=None, on_start=None, on_attempt=None, memory_path=None,
-          cloud_check=None, secrets=()):
+          cloud_check=None, secrets=(), tests_code=None):
     """Try each tier in order and stop at the first answer that passes all tests.
 
+    Benchmark format: tests is a list of (args, expected). Custom format: tests=None and
+    tests_code is the user's assert-based test code (see make_custom_task); attempts then
+    also carry first_failure, and task_id defaults to custom:<8 hex of the memory key>.
     allow_cloud: None reads ALLOW_CLOUD from the environment. on_start(tier_name) and
     on_attempt(attempt) are optional callbacks so a caller can show progress live.
     memory_path: a verified-memory JSONL file, or None to run without memory.
@@ -135,13 +194,16 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
     """
     if allow_cloud is None:
         allow_cloud = os.environ.get("ALLOW_CLOUD") == "1"
-    task = {"entry": entry, "tests": tests}
+    custom = tests_code is not None
+    task = {"entry": entry, "tests": tests, "tests_code": tests_code}
+    if custom and task_id is None:
+        task_id = custom_task_id(prompt, entry, tests_code)
     attempts, skipped = [], []
     skip_reason = ""
     solved_by = None
     passing_code = None
 
-    key = memory_key(prompt, tests, entry) if memory_path else None
+    key = memory_key(prompt, tests, entry, tests_code) if memory_path else None
     if key:
         if on_start:
             on_start("memory")
@@ -151,11 +213,13 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
                    "out_tokens": 0, "cost_usd": 0.0, "error": ""}
         if stored is not None:
             # Re-verify on every reuse: a stored answer is trusted only if it passes now.
-            ok, error = check(stored["code"], task)
+            ok, error, first = check_detail(stored["code"], task)
             if ok:
                 attempt.update(memory="hit", passed=True, stored_tier=stored.get("tier"))
             else:
                 attempt["error"] = "stored answer failed the re-check" + (f": {error}" if error else "")
+                if custom:
+                    attempt["first_failure"] = first
         attempt["seconds"] = round(time.time() - start, 2)
         attempts.append(attempt)
         if on_attempt:
@@ -194,7 +258,9 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             text = reply
             attempt["cost_usd"] = tier.cost_per_call
         code = bench_coding.extract_code(text)
-        attempt["passed"], attempt["error"] = check(code, task)
+        attempt["passed"], attempt["error"], first = check_detail(code, task)
+        if custom:
+            attempt["first_failure"] = first
         attempt["seconds"] = round(time.time() - start, 2)
         attempts.append(attempt)
         if on_attempt:
@@ -245,10 +311,16 @@ def write_log(result, log_path=LOG_PATH, secrets=()):
         f.write(redact(json.dumps(line), secrets) + "\n")
 
 
-def memory_key(prompt, tests, entry):
-    """SHA-256 of the exact prompt, tests and entry point. Any change is a different key."""
-    blob = json.dumps({"prompt": prompt, "tests": tests, "entry": entry},
-                      sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=repr)
+def memory_key(prompt, tests, entry, tests_code=None):
+    """SHA-256 of the exact prompt, tests, entry point and (custom tasks) tests_code.
+
+    Any change is a different key. tests_code is left out when None, so benchmark keys
+    stored before custom tasks existed stay the same.
+    """
+    fields = {"prompt": prompt, "tests": tests, "entry": entry}
+    if tests_code is not None:
+        fields["tests_code"] = tests_code
+    blob = json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=repr)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
