@@ -153,7 +153,7 @@ class DataLocationEndToEnd(ServerProcess):
         self.start_process([sys.executable, os.path.join(REPO, "eco_server.py")], {"ALLOW_CLOUD": "1"})
         self.post("/api/key", {"name": "Fake", "key": KEY})
         tier = {"id": "c", "name": "C", "kind": "cloud", "provider": "openai_compatible", "base_url": self.fake(GOOD).root + "/v1",
-                "model": "m", "flags": {}, "enabled": True, "price_in_per_m": 1000.0, "price_out_per_m": 1000.0}
+                "model": "m", "flags": {}, "enabled": True, "price_in_per_m": 1000.0, "price_out_per_m": 1000.0, "key_name": "Fake"}
         result = self.run_job({"custom": CUSTOM}, tier)
         self.assertEqual(result["solved_by"], "c")
         self.assertTrue(os.path.exists(self.log))
@@ -265,6 +265,26 @@ class BuiltCheckMode(unittest.TestCase):
         p = self.run_script("assert 1 == 2, 'the reason'\n")
         self.assertEqual(p.returncode, 1)
         self.assertIn("AssertionError: the reason", p.stderr)
+
+    def test_key_routing_in_the_bundled_code(self):
+        # requests.post is replaced inside the exe, so this can reach no network, the default Meta host least of all.
+        p = self.run_script(f"""
+import json, eco_core, requests, settings
+sent = []
+class Reply:
+    def raise_for_status(self): pass
+    def json(self): return {{"output": [], "usage": {{}}}}
+requests.post = lambda url, headers=None, **kw: sent.append([url, headers["Authorization"]]) or Reply()
+meta = settings.default_settings()["tiers"][2]
+tiers = [meta, {{**meta, "id": "edited", "base_url": "http://127.0.0.1:9/v1"}},
+         {{"id": "custom", "kind": "cloud", "provider": "openai_compatible", "base_url": "http://127.0.0.1:9/v1", "model": "m", "flags": {{}},
+          "price_in_per_m": 1.0, "price_out_per_m": 1.0}}]
+built = eco_core.build_tiers({{"tiers": tiers}}, allow_cloud=True, keys={{"Only": "{KEY}"}})
+built[0].ask("p")
+print(json.dumps([[t.wait_reason for t in built], sent]))
+""")
+        self.assertEqual(json.loads(p.stdout), [["", "Choose a key", "Choose a key"],
+                                                [["https://api.meta.ai/v1/responses", "Bearer " + KEY]]], p.stderr)
 
     def test_https_certificates_load(self):
         p = self.run_script("import ssl\nprint(len(ssl.create_default_context().get_ca_certs()) > 0)\n")

@@ -64,6 +64,9 @@ class FakeModelServer:
                 if self.path == "/v1/chat/completions" and reply is not None:
                     return self._reply(200, {"choices": [{"message": {"content": reply}}],
                                              "usage": {"prompt_tokens": 12, "completion_tokens": 34}})
+                if self.path == "/v1/responses" and reply is not None:
+                    return self._reply(200, {"output": [{"type": "message", "content": [{"type": "output_text", "text": reply}]}],
+                                             "usage": {"input_tokens": 12, "output_tokens": 34}})
                 self._reply(404, {"error": "not found"})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
@@ -252,7 +255,7 @@ class GenericTierTests(TempDataDir):
         cloud = self.servers(FakeModelServer(reply=GOOD))[0]
         cfg = {"id": "other", "name": "Other cloud", "kind": "cloud", "provider": "openai_compatible",
                "base_url": cloud.root + "/v1", "model": "c", "flags": {}, "enabled": True,
-               "price_in_per_m": 1.0, "price_out_per_m": 2.0}
+               "price_in_per_m": 1.0, "price_out_per_m": 2.0, "key_name": "Default"}
         config = settings.validate({"tiers": [cfg]})
         off = eco_core.solve(PROMPT, TESTS, "add", eco_core.build_tiers(config, key=FAKE_KEY, allow_cloud=False),
                              log_path=self.log, allow_cloud=False)
@@ -452,7 +455,7 @@ class SettingsServerTests(ServerCase):
             local_tier("lan", local_srv.root + "/v1"),
             {"id": "other", "name": "Other", "kind": "cloud", "provider": "openai_compatible",
              "base_url": cloud_srv.root + "/v1", "model": "c", "flags": {}, "enabled": True,
-             "price_in_per_m": 1.0, "price_out_per_m": 1.0}]})
+             "price_in_per_m": 1.0, "price_out_per_m": 1.0, "key_name": "Default"}]})
         status, _ = self.post("/api/settings", {"tiers": [local_tier("x", "http://h:1/v1", name=FAKE_KEY)]})
         self.assertEqual(status, 400, "the key can't be smuggled into settings")
         job_id = self.solve(eco=True)

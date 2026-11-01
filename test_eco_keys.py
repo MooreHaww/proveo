@@ -12,6 +12,7 @@ import bench_coding
 import eco_core
 import eco_server
 import settings
+from test_eco_presets import page_presets
 from test_eco_server import BAD, GOOD, ServerCase, fake
 from test_eco_settings import FakeModelServer, local_tier
 
@@ -86,8 +87,28 @@ class TierKeyName(unittest.TestCase):
         self.assertEqual(f({"key_name": "Gone"}, keys), (None, eco_core.NO_KEY_REASON), "never falls back")
         self.assertEqual(f({"key_name": "Gone"}, {"One": KEY_A}), (None, eco_core.NO_KEY_REASON), "never falls back")
         self.assertEqual(f({}, keys), (None, "Choose a key"))
-        self.assertEqual(f({}, {"One": KEY_A}), ("One", ""))
+        self.assertEqual(f({}, {"One": KEY_A}), (None, "Choose a key"), "no name, not the default Meta rung: no key")
         self.assertEqual(f({}, {}), (None, "No API key set yet"))
+
+    def test_only_meta_on_its_own_https_host_may_use_the_only_key(self):
+        keys = {"One": KEY_A}
+        f = eco_core.key_name_for_tier
+        for url in ("https://api.meta.ai/v1", "https://API.META.AI/v1", "https://api.meta.ai:443/v1"):
+            self.assertEqual(f({"provider": "meta", "base_url": url}, keys), ("One", ""), url)
+        for url in ("http://api.meta.ai/v1", "https://api.meta.ai:8443/v1", "https://api.meta.ai.evil.example/v1",
+                    "https://evil.example/api.meta.ai/v1", "https://evilapi.meta.ai/v1", "https://sub.api.meta.ai/v1",
+                    "http://127.0.0.1:9/v1", "not a url", "https://api.meta.ai:bad/v1", ""):
+            self.assertEqual(f({"provider": "meta", "base_url": url}, keys), (None, "Choose a key"), url)
+        self.assertEqual(f({"provider": "openai_compatible", "base_url": "https://api.meta.ai/v1"}, keys), (None, "Choose a key"))
+        self.assertEqual(f({"provider": "meta", "base_url": "https://api.meta.ai/v1"}, {"One": KEY_A, "Two": KEY_B}),
+                         (None, "Choose a key"), "two keys: it must be told which")
+
+    def test_a_plain_key_follows_the_same_rule(self):
+        cfg = {"tiers": [{"id": "meta", "name": "M", "kind": "cloud", "provider": "meta", "base_url": "https://api.meta.ai/v1",
+                          "model": "m", "flags": {}, "enabled": True},
+                         {"id": "other", "name": "O", "kind": "cloud", "provider": "openai_compatible", "base_url": "https://x.example/v1",
+                          "model": "m", "flags": {}, "enabled": True, "price_in_per_m": 1.0, "price_out_per_m": 1.0}]}
+        self.assertEqual([t.wait_reason for t in eco_core.build_tiers(cfg, key=KEY_A, allow_cloud=True)], ["", "Choose a key"])
 
     def test_meta_rung_gets_only_its_own_key(self):
         seen = []
@@ -103,7 +124,7 @@ class TierKeyName(unittest.TestCase):
         self.assertEqual([t.wait_reason for t in tiers], ["", "", "No API key set yet"])
 
 
-class KeyApi(ServerCase):
+class KeyCase(ServerCase):
     def setUp(self):
         self._env = mock.patch.dict(os.environ, {})
         self._env.start()
@@ -132,6 +153,8 @@ class KeyApi(ServerCase):
             self.addCleanup(srv.close)
         return made
 
+
+class KeyApi(KeyCase):
     def test_add_replace_remove(self):
         self.start()
         self.assertEqual(self.status(), {"keys": []})
@@ -214,7 +237,7 @@ class KeyApi(ServerCase):
             log = f.read()
         self.assert_no_key_material(saved + log + self.request(f"/api/jobs/{state['id']}")[1], KEY_A, KEY_B)
 
-    def test_no_key_name_uses_the_only_key_otherwise_choose_a_key(self):
+    def test_no_key_name_gets_no_key_however_many_are_stored(self):
         srv, = self.servers(GOOD)
         self.start(allow_cloud=True)
         self.post("/api/settings", {"tiers": [cloud_tier("c", srv)]})
@@ -222,16 +245,16 @@ class KeyApi(ServerCase):
         self.assertEqual(view["rung_keys"], {"c": {"key_name": None, "reason": "No API key set yet"}})
 
         self.post("/api/key", {"name": "One", "key": KEY_A})
-        self.assertEqual(self.status(), {"keys": [{"name": "One", "rungs": ["C"]}]}, "the only key counts as used")
-        self.assertEqual(self.done()["result"]["solved_by"], "c")
-        self.assertEqual(srv.requests[-1]["auth"], "Bearer " + KEY_A)
+        self.assertEqual(self.status(), {"keys": [{"name": "One", "rungs": []}]}, "the only key is not used by it")
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"c": "Choose a key"})
+        self.assertEqual(srv.requests, [], "nothing is sent")
 
         self.post("/api/key", {"name": "Two", "key": KEY_B})
-        before = len(srv.requests)
         state = self.done()
         self.assertEqual(state["skip_reasons"], {"c": "Choose a key"})
         self.assertEqual(state["status"], "done")
-        self.assertEqual((len(srv.requests), state["attempts"][0:]), (before, []), "nothing is sent")
+        self.assertEqual((srv.requests, state["attempts"][0:]), ([], []), "nothing is sent")
         view = json.loads(self.request("/api/settings")[1])
         self.assertEqual(view["rung_keys"], {"c": {"key_name": None, "reason": "Choose a key"}})
         self.assertEqual(view["key_names"], ["One", "Two"])
@@ -288,7 +311,7 @@ class KeyApi(ServerCase):
     def test_old_single_key_request_means_default(self):
         srv, = self.servers(GOOD)
         self.start(allow_cloud=True)
-        self.post("/api/settings", {"tiers": [cloud_tier("c", srv)]})
+        self.post("/api/settings", {"tiers": [cloud_tier("c", srv, "Default")]})
         self.assertEqual(self.post("/api/key", {"key": KEY_A}), (200, {"set": True}))
         self.assertEqual(self.status(), {"keys": [{"name": "Default", "rungs": ["C"]}]})
         self.assertEqual(self.done()["result"]["solved_by"], "c")
@@ -312,6 +335,130 @@ class KeyApi(ServerCase):
         self.assertEqual(self.request("/api/key/remove", body, {"Host": "evil.example"})[0], 403)
         self.assertEqual(self.request("/api/key/remove")[0], 404, "POST only")
         self.assertEqual([k["name"] for k in self.status()["keys"]], ["One"])
+
+
+class KeyRouting(KeyCase):
+    """What each fake server's raw Authorization header really was. Reaches no real service: the default
+    Meta host is only ever redirected to a fake server, inside requests.post."""
+
+    def default_meta(self, **extra):
+        return {**settings.default_settings()["tiers"][2], **extra}
+
+    def meta_host_is_fake(self, srv):
+        real = bench_coding.requests.post
+
+        def post(url, **kw):
+            self.assertEqual(url, "https://api.meta.ai/v1/responses")
+            return real(srv.root + "/v1/responses", **kw)
+        patcher = mock.patch.object(bench_coding.requests, "post", post)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def save(self, *tiers):
+        status, text = self.post("/api/settings", {"tiers": list(tiers)})
+        self.assertEqual(status, 200, text)
+
+    def test_one_stored_key_and_a_custom_rung_with_no_name(self):
+        srv, next_rung = self.servers(GOOD, GOOD)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Only", "key": KEY_A})
+        self.save(cloud_tier("custom", srv), local_tier("after", next_rung.root + "/v1"))
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"custom": "Choose a key"})
+        self.assertEqual(state["result"]["solved_by"], "after", "the ladder goes on past it")
+        self.assertEqual(srv.requests, [], "no request, so no Authorization header at all")
+        self.assertIsNone(next_rung.requests[0]["auth"])
+        view = json.loads(self.request("/api/settings")[1])
+        self.assertEqual(view["rung_keys"]["custom"], {"key_name": None, "reason": "Choose a key"})
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "rungs": []}]})
+
+    def test_eco_off_does_not_send_it_either(self):
+        srv, = self.servers(GOOD)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Only", "key": KEY_A})
+        self.save(cloud_tier("custom", srv))
+        state = self.done(eco=False)
+        self.assertEqual(state["skip_reasons"], {"custom": "Choose a key"})
+        self.assertEqual(srv.requests, [])
+
+    def test_the_default_meta_rung_uses_the_only_key(self):
+        srv, = self.servers(GOOD)
+        self.meta_host_is_fake(srv)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Only", "key": KEY_A})
+        self.save(self.default_meta())
+        self.assertEqual(self.done()["result"]["solved_by"], "cloud")
+        self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "rungs": ["Meta Muse Spark 1.3"]}]})
+
+    def test_legacy_default_key_on_the_default_ladder(self):
+        srv, = self.servers(GOOD)
+        self.meta_host_is_fake(srv)
+        self.start(allow_cloud=True)
+        self.assertEqual(self.post("/api/key", {"key": KEY_A}), (200, {"set": True}))
+        self.save(self.default_meta())  # the default ladder's cloud rung, without its unreachable local rungs
+        self.assertEqual(self.done()["result"]["solved_by"], "cloud")
+        self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
+
+    def test_model_api_key_on_the_cli_reaches_the_default_rung_only(self):
+        meta_srv, custom = self.servers(GOOD, GOOD)
+        self.meta_host_is_fake(meta_srv)
+        os.environ["MODEL_API_KEY"] = KEY_A
+        self.start(allow_cloud=True)
+        self.save(cloud_tier("custom", custom), self.default_meta())
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"custom": "Choose a key"})
+        self.assertEqual(state["result"]["solved_by"], "cloud")
+        self.assertEqual(custom.requests, [])
+        self.assertEqual([r["auth"] for r in meta_srv.requests], ["Bearer " + KEY_A])
+
+    def test_each_preset_rung_names_its_own_key(self):
+        presets = page_presets()
+        self.start(allow_cloud=True)
+        for preset in presets.values():
+            self.post("/api/key", {"name": preset["key_name"], "key": "made-up-" + preset["key_name"].split()[0] + "-0123456789"})
+        for pid, preset in presets.items():
+            srv, = self.servers(GOOD)
+            tier = cloud_tier(pid, srv, preset["key_name"], flags=preset["flags"])
+            self.save(tier)
+            self.assertEqual(self.done()["result"]["solved_by"], pid)
+            self.assertEqual([r["auth"] for r in srv.requests], ["Bearer made-up-" + preset["key_name"].split()[0] + "-0123456789"])
+
+    def test_a_preset_rung_never_takes_another_providers_only_key(self):
+        srv, = self.servers(GOOD)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Meta personal", "key": KEY_A})
+        self.save(cloud_tier("claude", srv, page_presets()["claude"]["key_name"]))
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"claude": "No API key set yet"})
+        self.assertEqual(srv.requests, [])
+
+    def test_a_meta_rung_on_an_edited_host_loses_the_exception(self):
+        srv, = self.servers(GOOD)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Only", "key": KEY_A})
+        edited = self.default_meta(base_url=srv.root + "/v1")
+        self.save(edited)
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"cloud": "Choose a key"})
+        self.assertEqual(srv.requests, [], "no request, so no Authorization header at all")
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "rungs": []}]})
+        # Naming the key is the way to use it there.
+        self.save({**edited, "key_name": "Only"})
+        self.assertEqual(self.done()["result"]["solved_by"], "cloud")
+        self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
+
+    def test_a_removed_name_never_falls_back_even_on_the_default_meta_rung(self):
+        srv, custom = self.servers(GOOD, GOOD)
+        self.meta_host_is_fake(srv)
+        self.start(allow_cloud=True)
+        self.post("/api/key", {"name": "Gone", "key": KEY_A})
+        self.post("/api/key", {"name": "Kept", "key": KEY_B})
+        self.save(self.default_meta(key_name="Gone"), cloud_tier("custom", custom, "Gone"))
+        self.post("/api/key/remove", {"name": "Gone"})
+        state = self.done()
+        self.assertEqual(state["skip_reasons"], {"cloud": "No API key set yet", "custom": "No API key set yet"})
+        self.assertEqual((srv.requests, custom.requests), ([], []))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,13 @@ def cloud(base_url, **extra):
             "flags": {}, "enabled": True, "price_in_per_m": 1.0, "price_out_per_m": 1.0, **extra}
 
 
+def page_presets():
+    """The page's PRESETS block. It is plain JSON apart from unquoted keys."""
+    with open(PAGE, encoding="utf-8") as f:
+        block = re.search(r"const PRESETS = (\{.*?\n  \});", f.read(), re.S).group(1)
+    return json.loads(re.sub(r"^(\s*)([a-zA-Z_]+):", r'\1"\2":', block, flags=re.M))
+
+
 class RawServer:
     """Answers every POST with a fixed JSON body, to imitate replies FakeModelServer can't."""
 
@@ -183,9 +190,7 @@ class PagePresets(unittest.TestCase):
     def setUp(self):
         with open(PAGE, encoding="utf-8") as f:
             self.page = f.read()
-        block = re.search(r"const PRESETS = (\{.*?\n  \});", self.page, re.S).group(1)
-        # The block is plain JSON apart from unquoted keys.
-        self.presets = json.loads(re.sub(r"^(\s*)([a-zA-Z_]+):", r'\1"\2":', block, flags=re.M))
+        self.presets = page_presets()
 
     def test_three_presets_with_the_documented_urls(self):
         self.assertEqual({k: p["base_url"] for k, p in self.presets.items()},
@@ -206,6 +211,10 @@ class PagePresets(unittest.TestCase):
             clean = settings.validate({"tiers": [tier]})["tiers"][0]
             self.assertEqual(clean["flags"], dict(sorted(p["flags"].items())), name)
             self.assertEqual(clean["key_name"], p["key_name"], name)
+
+    def test_the_page_uses_the_same_key_rule_as_the_backend(self):
+        self.assertIn(f'const DEFAULT_META_HOST = "{eco_core.DEFAULT_META_HOST}";', self.page)
+        self.assertIn("names.length === 1 && mayUseOnlyKey(t) ? `Automatic (${names[0]})` : \"Choose a key\"", self.page)
 
     def test_flags_match_what_the_docs_say(self):
         self.assertTrue(self.presets["claude"]["flags"]["omit_temperature"], "Claude refuses temperature below 1")

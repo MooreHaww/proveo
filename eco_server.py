@@ -48,7 +48,7 @@ CUSTOM_CHECK_NOTE = ("NOT a real sandbox: the answer and your tests run together
 CLOUD_DISABLED = "cloud disabled: start the server with ALLOW_CLOUD=1 to use the cloud tier"
 NO_CLOUD_TIER = "no cloud tier is enabled in the settings"
 PROVIDERS = {"meta": "tested", "openai_compatible": "UNTESTED"}
-DEFAULT_KEY_NAME = "Default"  # a key with no name: MODEL_API_KEY, or the old {"key": ...} request
+DEFAULT_KEY_NAME = eco_core.DEFAULT_KEY_NAME
 
 
 def measured_numbers():

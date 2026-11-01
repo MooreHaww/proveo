@@ -16,6 +16,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
+from urllib.parse import urlsplit
 
 import bench_coding
 
@@ -28,6 +29,8 @@ LOCAL_PORTS = {11434: "Ollama", 8080: "llama.cpp", 8081: "llama.cpp", 1234: "LM 
 CLOUD_OFF_REASON = "cloud disabled (ALLOW_CLOUD is not 1)"
 NO_KEY_REASON = "No API key set yet"
 CHOOSE_KEY_REASON = "Choose a key"
+DEFAULT_KEY_NAME = "Default"  # a key with no name: MODEL_API_KEY, or the old {"key": ...} request
+DEFAULT_META_HOST = "api.meta.ai"
 LOCAL_MAX_TOKENS = 500   # same as bench_coding.ask_pi / ask_pc
 # openai_compatible cloud tiers only; Meta rungs have their own limit. Reasoning counts against it, and
 # a cut-off answer is paid for and useless. 25,000 is what OpenAI's reasoning guide says to reserve.
@@ -102,18 +105,29 @@ def ask_openai_chat(base_url, model, prompt, disable_thinking=False, key=None, m
     return reply
 
 
+def may_use_only_key(cfg):
+    """True only for a Meta rung on Meta's own HTTPS endpoint. Every other host must name its key."""
+    if cfg.get("provider") != "meta":
+        return False
+    try:
+        url = urlsplit(cfg.get("base_url", ""))
+        return url.scheme == "https" and url.hostname == DEFAULT_META_HOST and url.port in (None, 443)
+    except ValueError:
+        return False
+
+
 def key_name_for_tier(cfg, keys):
     """(the name of the key this cloud tier uses or None, why it has none or "").
 
     keys is {name: key}. A tier with a key_name only ever uses that key, ignoring case: if it was
-    removed the tier waits, it never falls back to another. A tier with no key_name uses the only
-    key if there is exactly one.
+    removed the tier waits, it never falls back to another. A tier with no key_name gets no key,
+    except that the default Meta rung uses the only key if there is exactly one.
     """
     wanted = cfg.get("key_name")
     if wanted:
         found = next((n for n in keys if n.casefold() == wanted.casefold()), None)
         return found, "" if found else NO_KEY_REASON
-    if len(keys) == 1:
+    if len(keys) == 1 and may_use_only_key(cfg):
         return next(iter(keys)), ""
     return None, CHOOSE_KEY_REASON if keys else NO_KEY_REASON
 
@@ -149,15 +163,17 @@ def tier_from_config(cfg, key="", allow_cloud=None, wait_reason=""):
 def build_tiers(config, key="", allow_cloud=None, keys=None):
     """The enabled tiers of a settings dict, in order.
 
-    keys ({name: key}) gives each cloud tier only its own key, and a local tier none. Without keys,
-    every cloud tier gets key.
+    keys ({name: key}) gives each cloud tier only its own key, and a local tier none. A plain key
+    counts as the only key, named Default.
     """
+    if keys is None and key:
+        keys = {DEFAULT_KEY_NAME: key}
     tiers = []
     for t in config["tiers"]:
         if not t.get("enabled", True):
             continue
         if keys is None or t["kind"] != "cloud":
-            tiers.append(tier_from_config(t, key if keys is None else "", allow_cloud))
+            tiers.append(tier_from_config(t, "", allow_cloud))
         else:
             name, reason = key_name_for_tier(t, keys)
             tiers.append(tier_from_config(t, keys[name] if name else "", allow_cloud, reason))

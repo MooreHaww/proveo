@@ -321,6 +321,12 @@
   .keystate.set { color: #fff; background: var(--ink); border-color: var(--ink); }
   .keystate.none { color: var(--muted); border-style: dashed; }
   .presets { gap: 8px; flex-wrap: wrap; }
+  .keywait { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--ink); font-size: 0.95rem; }
+  .keywait .tag { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 8px; border: 1.5px dashed var(--ink); border-radius: 8px; }
+  .keywait svg { width: 16px; height: 16px; flex: none; }
+  .rungwaits { list-style: none; margin: 0 0 16px; padding: 0; }
+  .rungwaits li { padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: 10px; margin-bottom: 8px; }
+  .rungwaits .keywait { margin: 0 0 6px; }
   .presets .ghost-btn[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
   .keylist { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 10px; }
   .keyrow { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fff; }
@@ -621,6 +627,7 @@
             </section>
             <section class="card" aria-labelledby="keyTitle">
               <h2 id="keyTitle">Your API keys</h2>
+              <ul class="rungwaits" id="rungWaits" aria-label="Cloud rungs waiting for a key" hidden></ul>
               <ul class="keylist" id="keyList"></ul>
               <h3 style="margin:0 0 10px">Add a key</h3>
               <div class="fields">
@@ -825,7 +832,7 @@
   function host(url) { try { return new URL(url).host; } catch (e) { return url; } }
   function hwLine(t) {
     if (t.kind === "local") return `${t.model} · ${host(t.base_url)}` + (t.flags && t.flags.disable_thinking ? " · thinking off" : "");
-    if (t.provider === "meta") return `${t.model} · ${(t.flags && t.flags.effort) || "minimal"} effort`;
+    if (t.provider === "meta") return `${t.model} · ${(t.flags && t.flags.effort) || "minimal"} effort` + (mayUseOnlyKey(t) ? "" : ` · ${host(t.base_url)}`);
     return `${t.model} · ${host(t.base_url)} · untested provider`;
   }
   const enabled = () => (S.settings ? S.settings.tiers.filter((t) => t.enabled) : []);
@@ -834,6 +841,23 @@
   const blocked = () => !!(S.budget && S.budget.level === "blocked");
   const KEY_WAITS = ["No API key set yet", "Choose a key"];
   const keyWait = (t) => (t.kind === "cloud" && S.settings.rung_keys[t.id] && S.settings.rung_keys[t.id].reason) || "";
+  // Same rule as eco_core.may_use_only_key, for rungs with unsaved edits: every other rung must name its key.
+  const DEFAULT_META_HOST = "api.meta.ai";
+  function mayUseOnlyKey(t) {
+    try {
+      const u = new URL(t.base_url);
+      return t.provider === "meta" && u.protocol === "https:" && u.hostname === DEFAULT_META_HOST && !u.port;
+    } catch (e) { return false; }
+  }
+  function keyReason(t) {
+    const names = S.settings.key_names;
+    if (t.key_name) return names.some((n) => nameKey(n) === nameKey(t.key_name)) ? "" : KEY_WAITS[0];
+    if (names.length === 1 && mayUseOnlyKey(t)) return "";
+    return names.length ? KEY_WAITS[1] : KEY_WAITS[0];
+  }
+  function keyWaitNote(reason) {
+    return h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), reason);
+  }
 
   /* ---------- Ladder ---------- */
   const rungEls = {};
@@ -953,7 +977,10 @@
       $("summary").textContent = "Nothing was run.";
     }
     notice(budgetStop ? "Budget limit reached: the cloud rung was skipped. Raise or remove the limit on the Cloud and Budget screen."
-      : KEY_WAITS.includes(job.message) ? `${job.skipped.map(nameOf).join(", ")} waited: ${job.message}. Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
+      : KEY_WAITS.includes(job.message) ? `${KEY_WAITS.map((why) => {
+          const rungs = job.skipped.filter((id) => job.skip_reasons[id] === why).map(nameOf);
+          return rungs.length ? `${rungs.join(", ")} waited: ${why}.` : "";
+        }).filter(Boolean).join(" ")} Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
       : job.message);
   }
 
@@ -1214,22 +1241,50 @@
     } catch (e) { const m = h("div", { class: "msg" }); out.append(m); showMsg(m, "error", "Could not probe:", e.message); }
     btn.disabled = false; btn.textContent = "Probe";
   }
-  /* The Key dropdown of a cloud rung. Names only; a name with no key stays selected, marked as not set. */
-  function keyPicker(t) {
+  /* The Key dropdown of a cloud rung. Names only; a name with no key stays selected, marked as not set.
+     onPick(name) saves the choice; by default it is an unsaved edit on the Models screen. */
+  function keyPicker(t, onPick) {
     const names = S.settings.key_names;
     const known = t.key_name ? names.find((n) => nameKey(n) === nameKey(t.key_name)) : null;
-    const auto = !names.length ? "No key yet" : names.length === 1 ? `Automatic (${names[0]})` : "Choose a key";
+    const auto = !names.length ? "No key yet" : names.length === 1 && mayUseOnlyKey(t) ? `Automatic (${names[0]})` : "Choose a key";
     const sel = h("select", { "aria-label": `API key for ${t.name}` },
       h("option", { value: "" }, auto),
       ...names.map((n) => h("option", { value: n }, n)),
       t.key_name && !known ? h("option", { value: t.key_name }, `${t.key_name} (not set)`) : null);
     sel.value = known || t.key_name || "";
+    const note = h("div", { class: "keynote" });
+    const showNote = () => { const why = keyReason(t); note.replaceChildren(...(why ? [keyWaitNote(why)] : [])); };
     sel.addEventListener("change", () => {
+      if (onPick) return onPick(sel.value);
       if (sel.value) t.key_name = sel.value; else delete t.key_name;
       S.dirty = true;
       dirtyFlag();
+      showNote();
     });
-    return h("label", { class: "keypick" }, "Key", sel);
+    showNote();
+    return h("div", null, h("label", { class: "keypick" }, "Key", sel), onPick ? null : note);
+  }
+  /* Cloud screen: the rungs waiting for a key, each with its own dropdown. A choice here is saved at once. */
+  function renderRungWaits() {
+    const list = $("rungWaits");
+    const waiting = S.settings.tiers.filter((t) => t.kind === "cloud" && keyReason(t));
+    list.hidden = !waiting.length;
+    list.replaceChildren(...waiting.map((t) => h("li", null,
+      h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), h("b", null, t.name), keyReason(t)),
+      S.settings.key_names.length ? keyPicker(t, (name) => pickRungKey(t, name)) : null)));
+  }
+  async function pickRungKey(t, name) {
+    const msg = $("keyMsg");
+    const tiers = clone(S.settings.tiers);
+    const change = (rung) => { if (name) rung.key_name = name; else delete rung.key_name; };
+    change(tiers.find((x) => x.id === t.id));
+    try {
+      const view = await post("/api/settings", { tiers });
+      const draft = S.dirty && S.draft.find((x) => x.id === t.id);  // keep unsaved Models edits
+      if (draft) change(draft);
+      applySettings(view);
+      showMsg(msg, "ok", "Saved.", name ? `${t.name} uses the key named ${name}.` : `${t.name} has no key chosen.`);
+    } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
   function renderRungList() {
     const list = $("rungList");
@@ -1335,6 +1390,7 @@
     if (p === "meta") { S.preset = null; showPreset(null); }
   }
   function fillCloudForm() {
+    renderRungWaits();
     const t = cloudTier(S.settings.tiers);
     const meta = cloudTier(S.settings.defaults) || {};
     $("metaInfo").textContent = `${host(meta.base_url || "")} · ${meta.model || ""}`;
@@ -1393,7 +1449,7 @@
       }
       applySettings(view);
       showMsg(msg, "ok", asNew ? "Added as a new rung." : "Saved.", prov === "meta" ? `Meta Muse Spark at ${tier.flags.effort} effort.`
-        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}.` : `${tier.name} (untested).`);
+        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}.` : `${tier.name} (untested). It waits until you choose a key for it.`);
     } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
   const REMOVE_WARNING = "Remove this key from the app? This does not cancel it at the provider; to revoke it, do that on the provider's site.";
