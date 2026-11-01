@@ -17,8 +17,10 @@ MAX_TIERS = 8
 KINDS = ("local", "cloud")
 PROVIDERS = ("meta", "openai_compatible")  # openai_compatible cloud is UNTESTED
 PERIODS = ("month",)
+COLOR_MODES = ("default", "custom")
+COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 TIER_FIELDS = {"id", "name", "kind", "provider", "base_url", "model", "flags", "enabled",
-               "price_in_per_m", "price_out_per_m", "key_name"}
+               "price_in_per_m", "price_out_per_m", "key_name", "color"}
 FLAG_FIELDS = {"disable_thinking", "effort", "omit_temperature", "max_tokens_field"}
 # What some OpenAI-compatible cloud services need instead of the usual request (see eco_core.ask_openai_chat).
 MAX_TOKENS_FIELDS = ("max_tokens", "max_completion_tokens")
@@ -83,6 +85,7 @@ def default_settings():
              "flags": {"effort": "minimal"}, "enabled": True},
         ],
         "budget": {"limit_usd": None, "period": "month"},
+        "color_mode": "default",
     }
 
 
@@ -170,6 +173,12 @@ def _tier(raw, i, errors):
                 tier["key_name"] = clean_key_name(raw["key_name"])
             except ValueError as e:
                 errors.append(f"{where}: {e}")
+    if raw.get("color") is not None:
+        # The page puts this in a CSS custom property, so nothing but #RRGGBB gets through.
+        if isinstance(raw["color"], str) and COLOR_RE.fullmatch(raw["color"]):
+            tier["color"] = raw["color"].upper()
+        else:
+            errors.append(f"{where}: color must look like #1B69AE")
     return tier
 
 
@@ -178,7 +187,7 @@ def validate(obj):
     errors = []
     if not isinstance(obj, dict):
         raise ValueError("settings must be an object")
-    unknown = set(obj) - {"tiers", "budget"}
+    unknown = set(obj) - {"tiers", "budget", "color_mode"}
     if unknown:
         errors.append(f"unknown field(s) {', '.join(sorted(unknown))}")
     raw_tiers = obj.get("tiers")
@@ -206,9 +215,12 @@ def validate(obj):
         if period not in PERIODS:
             errors.append("budget.period must be 'month'")
         budget = {"limit_usd": limit, "period": period}
+    color_mode = obj.get("color_mode", "default")
+    if not isinstance(color_mode, str) or color_mode not in COLOR_MODES:
+        errors.append("color_mode must be 'default' or 'custom'")
     if errors:
         raise ValueError("; ".join(errors))
-    return {"tiers": tiers, "budget": budget}
+    return {"tiers": tiers, "budget": budget, "color_mode": color_mode}
 
 
 def load():

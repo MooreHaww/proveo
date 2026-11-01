@@ -69,7 +69,7 @@ test("the server options put the log and memory in the app's data folder", () =>
   const dir = path.join("UD", "eco");
   assert.deepEqual(lib.backendArgs(1234, "UD"),
     ["--port", "1234", "--log", path.join(dir, "eco_log.jsonl"), "--memory", path.join(dir, "eco_memory.jsonl")]);
-  assert.equal(lib.bundledBackend("RES"), path.join("RES", "backend", "eco-backend.exe"));
+  assert.equal(lib.bundledBackend("RES"), path.join("RES", "backend", "proveo-backend.exe"));
 });
 
 test("the backend boot code takes its options from its arguments and holds no key", () => {
@@ -174,7 +174,7 @@ test("notifications ignore empty input and cut long text", () => {
   assert.equal(lib.notification("", ""), null);
   assert.equal(lib.notification("   ", "\n\t"), null);
   assert.equal(lib.notification(undefined, {}), null);
-  assert.deepEqual(lib.notification("", "body only"), { title: "Eco mode", body: "body only" });
+  assert.deepEqual(lib.notification("", "body only"), { title: "Proveo", body: "body only" });
   const n = lib.notification("T".repeat(500), "line1\nline2 " + "b".repeat(1000));
   assert.equal(n.title.length, lib.NOTIFY_TITLE_MAX);
   assert.ok(n.title.endsWith("\u2026"));
@@ -358,6 +358,91 @@ test("key prefixes: a known prefix under another known label is refused, without
   for (const key of CLEAR) for (const label of lib.KEY_PROVIDERS) assert.equal(lib.keyLabelProblem(key, label), "", `${key} as ${label}`);
 });
 
+function pageCheckTools() {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const part = (name) => new RegExp(`  function ${name}\\([\\s\\S]*?\\n  \\}`).exec(page)[0];
+  const examples = /const EXAMPLES = \{[\s\S]*?\n  \};/.exec(page)[0];
+  return new Function(`${examples}\n${part("codeTaskPrompt")}\n${part("checksToCode")}\n${part("splitCheck")}\n${part("codeToChecks")}\nreturn { EXAMPLES, codeTaskPrompt, checksToCode, splitCheck, codeToChecks };`)();
+}
+
+test("code task: rows build assert lines, and empty rows are left out", () => {
+  const { checksToCode, codeTaskPrompt } = pageCheckTools();
+  assert.equal(checksToCode([["roman_to_int('XIV')", "14"], ["", "  "], [" f(1) ", " [1, 2] "]]), "assert roman_to_int('XIV') == 14\nassert f(1) == [1, 2]");
+  assert.equal(checksToCode([["f(1)", ""]]), "assert f(1) == ", "half a row stays visible, not dropped");
+  assert.equal(codeTaskPrompt(" Add them. ", " add "), "Write a Python function named add. Add them.");
+});
+
+test("code task: code goes back to rows only when nothing would be lost", () => {
+  const { checksToCode, codeToChecks, EXAMPLES } = pageCheckTools();
+  for (const ex of Object.values(EXAMPLES)) assert.deepEqual(codeToChecks(checksToCode(ex.checks)), { rows: ex.checks, bad: [] });
+  assert.deepEqual(codeToChecks(`assert f("a == b") == 1\n\nassert g('x\\'==') == {"k": [1, 2]}`).rows, [['f("a == b")', "1"], [`g('x\\'==')`, '{"k": [1, 2]}']]);
+  const bad = ["import math", "assert f(1)", "assert f(1) != 2", "assert f(1) == 2, 'message'", "assert f(1) == 2  # note", "assert a == b == c", "assert f(1) == ", "assert f(1 == 2", "x = 1"];
+  for (const line of bad) assert.deepEqual(codeToChecks(`assert ok(1) == 1\n${line}`).bad, [2], line);
+});
+
+test("profile: the old folder moves once, whole, and nothing else is touched", (t) => {
+  const root = tempDir(t);
+  const proveo = path.join(root, "Proveo"), eco = path.join(root, "Eco");
+  fs.mkdirSync(path.join(eco, "eco"), { recursive: true });
+  fs.mkdirSync(path.join(root, "Neighbour"));
+  const files = { "model-key.enc": "made-up", "Local State": "made-up", [path.join("eco", "settings.json")]: "{}", [path.join("eco", "eco_log.jsonl")]: "", [path.join("eco", "eco_memory.jsonl")]: "" };
+  for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(eco, name), text);
+  fs.writeFileSync(path.join(root, "Neighbour", "keep.txt"), "keep");
+
+  assert.equal(lib.migrateProfile(proveo), proveo);
+  assert.ok(!fs.existsSync(eco), "the old folder is gone");
+  for (const [name, text] of Object.entries(files)) assert.equal(fs.readFileSync(path.join(proveo, name), "utf8"), text, name);
+  assert.equal(fs.readFileSync(path.join(root, "Neighbour", "keep.txt"), "utf8"), "keep");
+
+  // Once: a later old folder is left alone, and so is the new one.
+  fs.mkdirSync(eco);
+  fs.writeFileSync(path.join(eco, "later.txt"), "later");
+  assert.equal(lib.migrateProfile(proveo), proveo);
+  assert.equal(fs.readFileSync(path.join(eco, "later.txt"), "utf8"), "later");
+  assert.ok(!fs.existsSync(path.join(proveo, "later.txt")));
+});
+
+test("profile: no old folder, or a profile with another name, does nothing", (t) => {
+  const root = tempDir(t);
+  const eco = path.join(root, "Eco");
+  fs.mkdirSync(eco);
+  const other = path.join(root, "throwaway");
+  assert.equal(lib.migrateProfile(other), other, "a test profile never takes over a sibling");
+  assert.equal(lib.migrateProfile(eco), eco);
+  assert.ok(fs.existsSync(eco) && !fs.existsSync(other));
+  const empty = tempDir(t);
+  assert.equal(lib.migrateProfile(path.join(empty, "Proveo")), path.join(empty, "Proveo"));
+  assert.deepEqual(fs.readdirSync(empty), []);
+  const fileOnly = tempDir(t);
+  fs.writeFileSync(path.join(fileOnly, "Eco"), "not a folder");
+  assert.equal(lib.migrateProfile(path.join(fileOnly, "Proveo")), path.join(fileOnly, "Proveo"));
+  assert.ok(fs.statSync(path.join(fileOnly, "Eco")).isFile());
+});
+
+test("profile: if the move fails the old folder is used, and the next start tries again", (t) => {
+  const root = tempDir(t);
+  const proveo = path.join(root, "Proveo"), eco = path.join(root, "Eco");
+  fs.mkdirSync(eco);
+  assert.equal(lib.migrateProfile(proveo, () => { throw new Error("locked"); }), eco);
+  assert.ok(fs.existsSync(eco) && !fs.existsSync(proveo));
+  assert.equal(lib.migrateProfile(proveo), proveo);
+  assert.ok(!fs.existsSync(eco) && fs.existsSync(proveo));
+});
+
+test("the product is called Proveo everywhere the installer and the shell name it", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  assert.equal(pkg.name, "proveo-desktop");
+  assert.equal(pkg.build.productName, "Proveo");
+  assert.equal(pkg.build.appId, "proveo.app");
+  assert.equal(lib.PROFILE_NAME, "Proveo");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.match(main, /setAppUserModelId\("proveo\.app"\)/);
+  assert.match(main, /title: "Proveo"/);
+  assert.match(main, /"pi-edge-router-desktop"/, "npm start keeps its existing folder");
+  assert.doesNotMatch(main, /Eco mode|"Eco"/);
+  assert.match(lib.statusPage("x", ""), /<title>Proveo<\/title>/);
+});
+
 test("key prefixes: the page's own check gives the same answers", () => {
   const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
   const table = /const KEY_PREFIXES = \[\[.*?\]\];/.exec(page)[0];
@@ -400,4 +485,100 @@ test("the bridge passes the provider on, and the save handler refuses other orig
   assert.match(main, /"eco:saveKey", \(event, name, key, provider\) => \{\s+if \(!fromApp\(event\)\) return \{ stored: false/);
   assert.match(main, /"eco:removeKey", \(event, name\) => \{\s+if \(!fromApp\(event\)\) return \{ removed: false/);
   assert.match(main, /"\/api\/key", \{ name, key, provider \}/);
+});
+
+function pagePart(name) {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  return new RegExp(`  function ${name}\\([\\s\\S]*?\\n  \\}`).exec(page)[0];
+}
+
+test("detect: every spelling of an endpoint gives one key, as in detect.py", () => {
+  const endpointKey = new Function(`${pagePart("endpointKey")}\nreturn endpointKey;`)();
+  const same = [
+    ["http://localhost:8080/v1", "http://127.0.0.1:8080/v1", "http://[::1]:8080/v1", "http://0.0.0.0:8080/v1", "http://LOCALHOST:8080/v1/", "http://localhost:8080", "http://127.0.0.1:8080/"],
+    ["http://192.168.1.14:8080/v1", "http://192.168.1.14:8080"],
+    ["http://box:80/v1", "http://box/v1"],
+    ["https://box:443/v1", "https://box/v1"],
+  ];
+  for (const spellings of same) assert.equal(new Set(spellings.map(endpointKey)).size, 1, spellings[0]);
+  assert.equal(new Set(same.map((s) => endpointKey(s[0]))).size, same.length);
+  for (const [a, b] of [["http://localhost:8080/v1", "http://localhost:8081/v1"], ["http://box:1/v1", "https://box:1/v1"], ["http://localhost:1/v1", "http://192.168.1.14:1/v1"]]) {
+    assert.notEqual(endpointKey(a), endpointKey(b));
+  }
+  assert.equal(endpointKey("http://localhost:8080/v1"), "http://localhost:8080/v1");
+  assert.equal(endpointKey("not a url"), "not a url");
+});
+
+test("add rung: a second copy gets its own id and a distinct name", () => {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const uniqueId = /  function slug\([\s\S]*?\n  \}\n  function uniqueId\([\s\S]*?\n  \}/.exec(page)[0];
+  const tools = new Function(`${uniqueId}\n${pagePart("uniqueName")}\nreturn { uniqueId, uniqueName };`)();
+  const first = { id: tools.uniqueId("Qwen3 14B", []), name: tools.uniqueName("Qwen3 14B", []) };
+  assert.deepEqual(first, { id: "qwen3-14b", name: "Qwen3 14B" });
+  const second = { id: tools.uniqueId("Qwen3 14B", [first]), name: tools.uniqueName("Qwen3 14B", [first]) };
+  assert.deepEqual(second, { id: "qwen3-14b-2", name: "Qwen3 14B (2)" });
+  const third = { id: tools.uniqueId("Qwen3 14B", [first, second]), name: tools.uniqueName("Qwen3 14B", [first, second]) };
+  assert.deepEqual(third, { id: "qwen3-14b-3", name: "Qwen3 14B (3)" });
+  const long = "m".repeat(80);
+  const a = tools.uniqueName(long, []);
+  const b = tools.uniqueName(long, [{ name: a }]);
+  assert.equal(a.length, 60);
+  assert.equal(b.length, 60);
+  assert.notEqual(a, b);
+  assert.match(tools.uniqueId(long, [{ id: "m".repeat(26) }]), /^[a-z0-9][a-z0-9_-]{0,31}$/);
+});
+
+test("colours: Default ignores a saved colour, Custom uses it, and only valid hex gets through", () => {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const consts = ["HEX", "EFFORT_BLUE", "PALETTE"].map((n) => new RegExp(`const ${n} = .*;`).exec(page)[0]).join("\n");
+  const fn = new Function(`${consts}\n${pagePart("validHex")}\n${pagePart("colorsFor")}\nreturn { validHex, contrastOnCard, colorsFor, EFFORT_BLUE, HEX };`)();
+  const tiers = [{ id: "pi", kind: "local", color: "#882255" }, { id: "pc", kind: "local" },
+                 { id: "cloud", kind: "cloud", provider: "meta", flags: { effort: "high" }, color: "#0F6E84" },
+                 { id: "bad", kind: "local", color: "red;background:url(x)" }];
+  const auto = fn.colorsFor(tiers, "default");
+  assert.equal(auto.pi, fn.HEX.pi);
+  assert.equal(auto.cloud, fn.EFFORT_BLUE.high, "the Meta effort shades stay");
+  const custom = fn.colorsFor(tiers, "custom");
+  assert.deepEqual([custom.pi, custom.cloud], ["#882255", "#0F6E84"]);
+  assert.equal(custom.pc, fn.HEX.pc, "a rung with no colour keeps its automatic one");
+  assert.match(custom.bad, /^#[0-9A-Fa-f]{6}$/);
+  assert.notEqual(custom.bad, tiers[3].color);
+  assert.equal(fn.validHex("red;background:url(x)"), false);
+  assert.equal(fn.validHex("#123456\n"), false);
+  assert.ok(Math.abs(fn.contrastOnCard("#000000") - 21) < 0.01);
+  assert.ok(Math.abs(fn.contrastOnCard("#FFFFFF") - 1) < 0.01);
+  assert.ok(fn.contrastOnCard("#8ECBF1") < 3, "pale: refused");
+  assert.ok(fn.contrastOnCard("#882255") >= 3, "dark enough");
+});
+
+test("providers: each card preselects its own label in Add a key, and a suggested name follows", () => {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const presets = /const PRESETS = \{[\s\S]*?\n  \};/.exec(page)[0];
+  const els = { keyProvider: { value: "Meta" }, keyName: { value: "" } };
+  const { syncKeyForm, keyLabelFor } = new Function("$", `${presets}\n${pagePart("keyLabelFor")}\n${pagePart("syncKeyForm")}\nreturn { syncKeyForm, keyLabelFor };`)((id) => els[id]);
+  const options = [...page.match(/<select id="keyProvider">.*?<\/select>/)[0].matchAll(/value="(.*?)"/g)].map((m) => m[1]);
+  assert.deepEqual(options, lib.KEY_PROVIDERS);
+  for (const [card, label, name] of [["openai", "OpenAI", "OpenAI key"], ["claude", "Claude (Anthropic)", "Claude key"], ["gemini", "Gemini (Google)", "Gemini key"]]) {
+    syncKeyForm(card);
+    assert.deepEqual([els.keyProvider.value, els.keyName.value], [label, name], card);
+    assert.ok(options.includes(keyLabelFor(card)), card);
+  }
+  syncKeyForm("meta");
+  assert.deepEqual([els.keyProvider.value, els.keyName.value], ["Meta", ""], "Gemini key under Meta was the bug");
+  syncKeyForm("gemini");
+  syncKeyForm("custom");
+  assert.deepEqual([els.keyProvider.value, els.keyName.value], ["Other", ""]);
+  els.keyName.value = "My own name";
+  syncKeyForm("claude");
+  assert.deepEqual([els.keyProvider.value, els.keyName.value], ["Claude (Anthropic)", "My own name"], "a typed name stays");
+});
+
+test("providers: stored labels are shown under the new names and never change", () => {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const code = /const LABEL_SHOWN = .*;\n\s*function shownLabels\(text\) \{.*\}/.exec(page.replace(/\r\n/g, "\n"))[0];
+  const shownLabels = new Function(`${code}\nreturn shownLabels;`)();
+  assert.equal(shownLabels("This key looks like a Claude (Anthropic) key, but it is labelled Gemini (Google). Choose Other."),
+    "This key looks like a Claude key, but it is labelled Gemini. Choose Custom.");
+  assert.equal(shownLabels("Meta"), "Meta");
+  assert.deepEqual(lib.KEY_PROVIDERS, ["Meta", "OpenAI", "Claude (Anthropic)", "Gemini (Google)", "Other"]);
 });

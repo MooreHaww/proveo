@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Eco mode · pi-edge-router</title>
+<title>Proveo</title>
 <style>
   :root {
     --pi: #A3173F;
@@ -40,7 +40,6 @@
   .logo-dots { display: inline-flex; gap: 5px; }
   .logo-dots i { width: 12px; height: 12px; border-radius: 3px; display: block; }
   .logo-name { font-weight: 800; font-size: 1.05rem; line-height: 1.15; }
-  .logo-name small { display: block; font-weight: 600; color: var(--muted); font-size: 0.75rem; }
   .nav-item {
     display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; color: var(--ink);
     text-decoration: none; font-weight: 600; font-size: 1rem; border-left: 5px solid transparent;
@@ -48,17 +47,15 @@
   .nav-item svg { width: 24px; height: 24px; flex: none; }
   .nav-item:hover { background: var(--paper); }
   .nav-item[aria-current="page"] { background: color-mix(in srgb, var(--amber) 12%, #fff); border-left-color: var(--amber); font-weight: 800; }
-  .side-foot { margin-top: auto; padding: 14px 10px 0; color: var(--muted); font-size: 0.75rem; }
 
   .col { min-width: 0; display: flex; flex-direction: column; }
   .top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); }
   .top-in { display: flex; align-items: center; justify-content: space-between; gap: 14px 22px; padding: 16px 28px; flex-wrap: wrap; }
   .brand h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
-  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; }
   .controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 28px; }
   main { flex: 1; }
-  main.wrap { padding-top: 26px; padding-bottom: 10px; }
+  main.wrap { padding-top: 26px; padding-bottom: 28px; }
 
   .switch {
     display: inline-flex; align-items: center; gap: 14px; border: 2px solid var(--ink); background: var(--card);
@@ -78,10 +75,8 @@
   .pill svg { width: 18px; height: 18px; flex: none; }
 
   /* Compact budget meter in the header */
-  .bmini { display: grid; grid-template-columns: auto 110px; grid-template-rows: auto auto; gap: 2px 10px; align-items: center; text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--paper); font-weight: 600; }
-  .bmini .blabel { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
-  .bmini .bbar { grid-row: 1; grid-column: 2; }
-  .bmini .btext { font-size: 0.8rem; grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .bmini { display: grid; gap: 4px; align-items: center; text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--paper); font-weight: 600; }
+  .bmini .btext { font-size: 0.8rem; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
   .bbar { height: 10px; border-radius: 6px; background: #E4E3DC; overflow: hidden; }
   .bbar span { display: block; height: 100%; width: 0; background: var(--slate); transition: width .4s; }
   .bbar.warn span { background: var(--amber); }
@@ -101,14 +96,30 @@
 
   section.block { margin-bottom: 26px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; }
-  h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; }
-  .title { font-size: 1.6rem; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lead { margin: 0 0 22px; color: var(--muted); font-size: 1rem; max-width: 60em; }
+  h2 { font-size: 1.15rem; margin: 0 0 12px; }
+  .title { font-size: 1.6rem; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .lead { margin: -8px 0 22px; color: var(--muted); font-size: 1rem; max-width: 60em; }
+  /* A heading or field label with its info button */
+  .head { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; }
+  .head.lab { margin-bottom: 6px; }
+  .head h2, .head label.f { margin: 0; }
+  .info {
+    width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: none; color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center; flex: none; cursor: pointer;
+  }
+  .info svg { width: 20px; height: 20px; }
+  .info:hover, .info[aria-expanded="true"] { color: var(--ink); background: color-mix(in srgb, var(--slate) 14%, transparent); }
+  .pop {
+    position: absolute; z-index: 30; width: min(20rem, calc(100vw - 24px)); padding: 12px 14px; font-size: 0.9rem; white-space: pre-line;
+    background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
   .stack { display: grid; gap: 22px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
 
   /* Forms */
   label.f { display: block; font-weight: 700; margin-bottom: 6px; }
+  span.f { font-weight: 700; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   select, input[type=text], input[type=url], input[type=password], input[type=number], textarea {
     width: 100%; font: inherit; font-size: 1rem; padding: 10px 12px; border-radius: 10px; border: 2px solid #BDBCB4;
     background: #fff; color: var(--ink);
@@ -143,15 +154,34 @@
   .msg b { margin-right: 4px; }
 
   /* Run: task card */
-  .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 2px solid var(--line); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; border-bottom: 2px solid var(--line); }
   .tab { background: none; border: none; padding: 10px 16px; font-weight: 700; font-size: 1rem; color: var(--muted); cursor: pointer; border-bottom: 4px solid transparent; margin-bottom: -2px; }
   .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--amber); }
   .picker { display: grid; grid-template-columns: 1fr auto; gap: 16px 20px; align-items: end; }
   .preview { color: var(--muted); font-size: 0.95rem; margin: 10px 0 0; min-height: 1.4em; }
-  .custom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 22px; }
+  .custom { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; }
   .custom .full { grid-column: 1 / -1; }
   .run-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
-  .mode-line { margin: 0; font-size: 0.95rem; flex: 1; min-width: 16em; }
+  .mode-line { margin: 0; font-size: 0.95rem; }
+  .run-lines { flex: 1; min-width: 16em; }
+  .run-why { margin: 4px 0 0; font-size: 0.95rem; font-weight: 700; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .checks-head { flex-wrap: wrap; }
+  .checks-head .switch { margin-left: auto; }
+  .checks { width: 100%; border-collapse: collapse; }
+  .checks th { text-align: left; font-size: 0.9rem; padding: 0 8px 4px 0; }
+  .checks td { padding: 0 8px 8px 0; vertical-align: middle; }
+  .checks th:first-child { width: 58%; }
+  .checks th:last-child, .checks td:last-child { width: 40px; padding-right: 0; }
+  .field-err { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0 0; font-size: 0.95rem; font-weight: 600; color: var(--pi); }
+  .field-err svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+  [aria-invalid="true"] { border-color: var(--pi); }
+  .answer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 12px; }
+  .answer-head h2 { margin: 0; overflow-wrap: anywhere; }
+  .answer-head .ghost-btn { margin-left: auto; }
+  .answer-fail { margin: 0 0 12px; overflow-wrap: anywhere; }
+  .codeblock { margin: 0; padding: 14px 16px; max-height: 26em; overflow: auto; background: #F4F3EE; border: 1px solid var(--line); border-radius: 10px; font-size: 0.85rem; line-height: 1.45; }
+  .codeblock code { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; }
 
   /* Welcome card */
   .welcome { border: 2px solid var(--amber); }
@@ -159,7 +189,7 @@
   .welcome li { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--paper); }
   .welcome .n { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff; align-items: center; justify-content: center; font-weight: 800; margin-right: 8px; }
   .welcome li b { font-size: 1.05rem; }
-  .welcome li p { margin: 8px 0 0; font-size: 0.9rem; color: var(--muted); }
+  .welcome li a { display: block; margin-top: 8px; font-size: 0.9rem; }
   .welcome-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 
   /* Ladder */
@@ -173,7 +203,6 @@
     border-radius: var(--radius); padding: 16px 18px 18px; min-height: 240px; display: flex; flex-direction: column; gap: 10px;
     transition: background .25s, border-color .25s, opacity .25s;
   }
-  .step .rung, .memory .rung { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
   .step .name { font-size: 1.45rem; font-weight: 800; line-height: 1.1; display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; }
   .step .name i, .memory .name i, .sw { width: 16px; height: 16px; border-radius: 4px; background: var(--c); display: inline-block; flex: none; }
   .step .hw { color: var(--muted); font-size: 0.85rem; margin-top: -4px; overflow-wrap: anywhere; }
@@ -223,7 +252,6 @@
   .memory .metrics { margin-top: 4px; }
   .memory .mem-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; text-align: right; }
   .memory .mem-count { font-weight: 700; font-size: 0.95rem; }
-  .memory .mem-hint { grid-column: 1 / -1; margin: 2px 0 0; }
   .memory.waiting .badge, .memory.miss .badge, .memory.off .badge, .memory.bypassed .badge { border-style: dashed; }
   .memory.running { border-color: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent); }
   .memory.running .badge { color: var(--ink); }
@@ -247,7 +275,6 @@
     display: inline-block; font-size: 0.7rem; font-weight: 800; letter-spacing: .1em; padding: 3px 8px; border-radius: 6px;
     border: 2px solid var(--ink); vertical-align: middle; margin-left: 8px; text-transform: uppercase; color: var(--ink);
   }
-  .tag.untested { border-style: dashed; }
   .big { font-size: 3.2rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; margin: 6px 0 4px; }
   .big small { font-size: 1.2rem; color: var(--muted); font-weight: 600; letter-spacing: 0; }
   .sub { color: var(--muted); font-size: 0.95rem; margin: 0; }
@@ -294,7 +321,31 @@
     border: 2px solid var(--line); border-left: 10px solid var(--c); border-radius: 12px; padding: 12px 14px; background: #fff;
   }
   .rung-row.off { background: #F4F3EE; }
-  .rung-row .pos { grid-area: pos; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); min-width: 4.5em; align-self: start; padding-top: 12px; }
+  .solvedbar span, .legend i, #compare td i { background: var(--c); }
+  .ladder-actions { margin-top: 16px; justify-content: space-between; }
+  .seg { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.9rem; }
+  .seg-opts { display: inline-flex; border: 2px solid var(--slate); border-radius: 8px; overflow: hidden; }
+  .seg-opts label { padding: 8px 12px; cursor: pointer; background: #fff; }
+  .seg-opts label + label { border-left: 2px solid var(--slate); }
+  .seg-opts input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .seg-opts label:has(input:checked) { background: var(--ink); color: #fff; }
+  .seg-opts label:has(input:focus-visible) { outline: 3px solid var(--amber); outline-offset: -3px; }
+  .colorbtn { width: 40px; height: 40px; padding: 0; border: 2px solid var(--slate); border-radius: 8px; background: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .colorbtn i { display: block; width: 24px; height: 24px; border-radius: 4px; background: var(--c); }
+  .pop.color-pop { white-space: normal; }
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .swatch { aspect-ratio: 1; padding: 0; border: 2px solid transparent; border-radius: 6px; background: var(--c); cursor: pointer; }
+  .swatch[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .color-more { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+  .color-more label { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+  .color-more input { width: 44px; height: 32px; padding: 0; }
+  .color-note { margin: 10px 0 0; font-size: 0.85rem; }
+  .color-note:empty { display: none; }
+  .addform { margin-top: 14px; padding: 14px; border: 2px solid var(--line); border-radius: 12px; background: #fff; }
+  .model-acts { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+  .added { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--slate); }
+  .added svg { width: 14px; height: 14px; }
+  .rung-row .pos { grid-area: pos; font-weight: 800; font-size: 0.85rem; color: var(--muted); min-width: 4.5em; align-self: start; padding-top: 12px; }
   .rung-row .rname { grid-area: name; font-weight: 700; }
   .rung-row .meta { grid-area: meta; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
   .rung-row .acts { grid-area: acts; display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
@@ -302,18 +353,17 @@
   .icon-btn { width: 40px; height: 40px; border: 2px solid var(--slate); background: #fff; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
   .icon-btn svg { width: 20px; height: 20px; }
   .icon-btn:disabled { opacity: .35; cursor: default; }
-  .order-line { display: flex; gap: 10px; align-items: center; font-weight: 700; margin: 0; }
-  .order-line svg { width: 22px; height: 22px; flex: none; }
   .dirty { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.9rem; color: #7A5100; }
   .dirty svg { width: 18px; height: 18px; }
 
   /* Cloud and Budget screen */
-  .choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  .choice label { display: flex; gap: 12px; align-items: flex-start; border: 2px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; background: #fff; }
+  .grid2.cloud { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+  .grid2.cloud > .stack { display: flex; flex-direction: column; min-width: 0; }
+  .grid2.cloud > .stack > .card:last-child { flex: 1 1 auto; }
+  .choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.7rem, 1fr)); gap: 6px; margin-bottom: 16px; }
+  .choice label { display: flex; flex-direction: column; gap: 4px; align-items: center; border: 2px solid var(--line); border-radius: 12px; padding: 8px 2px; cursor: pointer; background: #fff; font-size: 0.85rem; }
   .choice label:has(input:checked) { border-color: var(--ink); background: color-mix(in srgb, var(--cmin) 7%, #fff); }
-  .choice input { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--ink); flex: none; }
-  .choice b { display: block; }
-  .choice small { color: var(--muted); font-size: 0.85rem; }
+  .choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); flex: none; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
   .fields .full { grid-column: 1 / -1; }
   .keystate { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.05rem; padding: 6px 12px; border-radius: 10px; border: 2px solid currentColor; }
@@ -349,12 +399,13 @@
   .bnums { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 700; }
 
   /* About */
-  .about p, .about li { font-size: 1.05rem; max-width: 46em; }
-  .about li { margin-bottom: 8px; }
-  .pitch { font-size: 1.6rem; font-weight: 800; line-height: 1.25; margin: 0 0 14px; max-width: 28em; }
-
-  footer { border-top: 1px solid var(--line); margin-top: 18px; }
-  footer p { margin: 0; padding: 18px 0 28px; color: var(--muted); font-size: 0.9rem; }
+  .about p { font-size: 1.05rem; max-width: 46em; margin: 0 0 8px; }
+  .about p:last-child { margin-bottom: 0; }
+  .about .pitch { font-weight: 700; }
+  .about ol, .about ul { font-size: 1.05rem; max-width: 46em; margin: 0 0 10px; padding-left: 1.4em; }
+  .about ol:last-child, .about ul:last-child { margin-bottom: 0; }
+  .about li { margin-bottom: 6px; }
+  .about code { font-size: 0.95em; overflow-wrap: anywhere; }
 
   /* Narrow: tabs on top instead of a sidebar */
   @media (max-width: 1100px) {
@@ -363,20 +414,22 @@
     .side { flex-direction: row; align-items: center; flex-wrap: wrap; padding: 8px 16px; gap: 4px; border-right: none; border-bottom: 1px solid var(--line);
             position: static; height: auto; overflow: visible; }
     .logo { border-bottom: none; padding: 0 12px 0 0; margin: 0; }
-    .logo-name small { display: none; }
     .nav-item { border-left: none; border-bottom: 4px solid transparent; border-radius: 8px 8px 0 0; padding: 10px 12px; }
     .nav-item[aria-current="page"] { border-bottom-color: var(--amber); }
-    .side-foot { display: none; }
     .top-in, .banner { padding-left: 20px; padding-right: 20px; }
     .wrap { padding: 0 20px; }
     .two, .calc, .grid2, .grid2.models { grid-template-columns: 1fr; }
+    .grid2.cloud { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
     .memory { grid-template-columns: auto auto 1fr; }
     .memory .mem-side { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; text-align: left; }
+  }
+  @media (max-width: 899px) {
+    .grid2.cloud { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 760px) {
     .ladder { flex-direction: column; }
     .arrow { flex-basis: 36px; transform: rotate(90deg); }
-    .custom, .fields, .choice, .welcome ol { grid-template-columns: 1fr; }
+    .custom, .fields, .welcome ol { grid-template-columns: 1fr; }
     .picker { grid-template-columns: 1fr; }
     .memory { grid-template-columns: 1fr; }
     .rung-row { grid-template-columns: 1fr; grid-template-areas: "pos" "name" "meta" "acts"; }
@@ -391,32 +444,29 @@
 <body>
 <div class="app">
   <nav class="side" aria-label="Screens">
-    <a class="logo" href="#run" aria-label="pi-edge-router, Run screen">
+    <a class="logo" href="#run" aria-label="Proveo, Run screen">
       <img id="logoImg" src="/assets/logo.svg" alt="" hidden>
       <span class="logo-dots" id="logoDots" aria-hidden="true"><i style="background:var(--pi)"></i><i style="background:var(--pc)"></i><i style="background:var(--cmin)"></i></span>
-      <span class="logo-name">Eco mode<small>pi-edge-router</small></span>
+      <span class="logo-name">Proveo</span>
     </a>
     <a class="nav-item" href="#run" data-screen="run" data-icon="play">Run</a>
     <a class="nav-item" href="#models" data-screen="models" data-icon="chip">Models</a>
     <a class="nav-item" href="#cloud" data-screen="cloud" data-icon="cloud">Cloud and Budget</a>
     <a class="nav-item" href="#about" data-screen="about" data-icon="info">About</a>
-    <p class="side-foot">Works for tasks with tests.</p>
   </nav>
 
   <div class="col">
     <header class="top">
       <div class="top-in">
         <div class="brand">
-          <h1>pi-edge-router</h1>
-          <p>Eco mode for AI coding: let the tests choose the model, cheapest first.</p>
+          <h1>Proveo</h1>
         </div>
         <div class="controls">
           <a class="bmini" href="#cloud" id="budgetMini" aria-label="Cloud budget, open the Cloud and Budget screen">
-            <span class="blabel">Budget this month</span>
             <span class="bbar" id="miniBar"><span></span></span>
             <span class="btext num" id="miniText">Loading…</span>
           </a>
-          <span class="pill" id="cloudPill" title="Set ALLOW_CLOUD=1 before starting the server to enable cloud rungs"></span>
+          <span class="pill" id="cloudPill"></span>
           <button class="switch" id="ecoSwitch" role="switch" aria-checked="true" aria-label="Eco mode">
             <span class="track" aria-hidden="true"><span class="knob"></span></span>
             <span>Eco mode</span><span class="state" id="ecoState">ON</span>
@@ -431,20 +481,20 @@
       <div class="screen" id="screen-run">
         <section class="block card welcome" id="welcome" hidden aria-labelledby="welcomeTitle">
           <div class="welcome-head">
-            <h2 id="welcomeTitle" style="margin:0">Welcome · three steps to start</h2>
+            <h2 id="welcomeTitle" style="margin:0">Get started</h2>
             <button class="xbtn" id="welcomeClose" type="button">Dismiss</button>
           </div>
           <ol>
-            <li><span class="n">1</span><b>Detect local models</b><p>Find Ollama, LM Studio or llama.cpp on this computer or a Pi. <a href="#models" id="welcomeDetect">Go to Models</a></p></li>
-            <li><span class="n">2</span><b>Add an API key (optional)</b><p>Only needed for a cloud rung. Set a monthly budget too. <a href="#cloud">Go to Cloud and Budget</a></p></li>
-            <li><span class="n">3</span><b>Run your first task</b><p>Pick a benchmark task or write your own with tests, then press Run.</p></li>
+            <li><span class="n">1</span><b>Detect local models</b><a href="#models" id="welcomeDetect">Go to Models</a></li>
+            <li><span class="n">2</span><b>Add an API key (optional)</b><a href="#cloud">Go to Cloud and Budget</a></li>
+            <li><span class="n">3</span><b>Run a task</b></li>
           </ol>
         </section>
 
         <section class="block card" aria-label="Task">
           <div class="tabs" role="tablist" aria-label="Task type">
             <button class="tab" role="tab" id="tabBench" aria-selected="true" aria-controls="panelBench" type="button">Benchmark task</button>
-            <button class="tab" role="tab" id="tabCustom" aria-selected="false" aria-controls="panelCustom" type="button">Your own task</button>
+            <button class="tab" role="tab" id="tabCustom" aria-selected="false" aria-controls="panelCustom" type="button">Code task</button>
           </div>
           <div id="panelBench" role="tabpanel" aria-labelledby="tabBench">
             <label class="f" for="taskSelect">Benchmark task</label>
@@ -453,38 +503,63 @@
           </div>
           <div id="panelCustom" role="tabpanel" aria-labelledby="tabCustom" hidden>
             <div class="custom">
+              <div class="full examples">
+                <span class="f" id="exampleLabel">Try an example</span>
+                <div class="row presets" role="group" aria-labelledby="exampleLabel">
+                  <button class="ghost-btn" type="button" data-example="palindrome">Palindrome</button>
+                  <button class="ghost-btn" type="button" data-example="fizzbuzz">FizzBuzz as a list</button>
+                  <button class="ghost-btn" type="button" data-example="merge">Merge overlapping intervals</button>
+                </div>
+                <button class="info" data-info="codetask"></button>
+              </div>
               <div class="full">
-                <label class="f" for="cPrompt">What the function should do</label>
-                <textarea id="cPrompt" rows="3" maxlength="4000" placeholder="Write a Python function is_palindrome(s) that returns True if s reads the same forwards and backwards, ignoring case."></textarea>
+                <label class="f" for="cPrompt">What should the function do?</label>
+                <textarea id="cPrompt" rows="3" maxlength="3900" aria-describedby="cPromptErr" placeholder="Return True if a string reads the same forwards and backwards."></textarea>
                 <div class="count num" id="cPromptCount"></div>
+                <p class="field-err" id="cPromptErr" hidden></p>
               </div>
-              <div>
+              <div class="full">
                 <label class="f" for="cEntry">Function name</label>
-                <input id="cEntry" type="text" class="code" spellcheck="false" autocomplete="off" placeholder="is_palindrome">
-                <p class="hint">The name your tests call. Letters, digits and _ only.</p>
-                <button class="ghost-btn" id="cExample" type="button" style="margin-top:10px">Fill in the example</button>
+                <input id="cEntry" type="text" class="code" spellcheck="false" autocomplete="off" aria-describedby="cEntryErr" placeholder="is_palindrome">
+                <p class="field-err" id="cEntryErr" hidden></p>
               </div>
-              <div>
-                <label class="f" for="cTests">Tests (assert lines)</label>
-                <textarea id="cTests" class="code" rows="6" maxlength="10000" spellcheck="false" placeholder='assert is_palindrome("abba") == True&#10;assert is_palindrome("Racecar") == True&#10;assert is_palindrome("abc") == False'></textarea>
-                <div class="count num" id="cTestsCount"></div>
+              <div class="full">
+                <div class="head lab checks-head">
+                  <span class="f" id="checksLabel">Checks</span><button class="info" data-info="check"></button>
+                  <button class="switch small" id="cCodeSwitch" role="switch" aria-checked="false" type="button">
+                    <span class="track" aria-hidden="true"><span class="knob"></span></span><span>Write the checks as code</span>
+                  </button>
+                </div>
+                <div id="cTable">
+                  <table class="checks" aria-labelledby="checksLabel">
+                    <thead><tr><th scope="col">Call</th><th scope="col">Should return</th><th><span class="sr">Remove</span></th></tr></thead>
+                    <tbody id="cRows"></tbody>
+                  </table>
+                  <button class="ghost-btn" id="cAddRow" type="button" style="margin-top:10px">Add check</button>
+                </div>
+                <div id="cCode" hidden>
+                  <textarea id="cTests" class="code" rows="6" maxlength="10000" spellcheck="false" aria-labelledby="checksLabel" aria-describedby="cTestsErr" placeholder="assert is_palindrome('abba') == True"></textarea>
+                  <div class="count num" id="cTestsCount"></div>
+                </div>
+                <p class="field-err" id="cTestsErr" hidden></p>
               </div>
-              <p class="hint full" style="margin:0">The check runs in a subprocess with a time limit, not a real sandbox.</p>
             </div>
             <div class="msg error" id="customMsg" role="alert"></div>
           </div>
           <div class="run-row">
-            <p class="mode-line" id="modeLine"></p>
+            <div class="run-lines">
+              <p class="mode-line" id="modeLine"></p>
+              <p class="run-why" id="runWhy" hidden></p>
+            </div>
             <button class="run-btn" id="runBtn" disabled>Run</button>
           </div>
         </section>
 
         <section class="block" aria-labelledby="ladderTitle">
-          <h2 id="ladderTitle">The ladder</h2>
+          <div class="head"><h2 id="ladderTitle">Ladder</h2><button class="info" data-info="ladder"></button></div>
           <div class="memory waiting" data-tier="memory">
             <div>
-              <div class="rung">Rung 0 · verified memory</div>
-              <div class="name"><i aria-hidden="true"></i>Memory</div>
+              <div class="name"><i aria-hidden="true"></i>Memory<button class="info" data-info="memory"></button></div>
             </div>
             <div class="badge"></div>
             <div>
@@ -495,16 +570,25 @@
               <span class="mem-count num" id="memCount" aria-live="polite"></span>
               <button class="ghost-btn" id="clearMem" type="button">Clear memory</button>
             </div>
-            <p class="hint mem-hint">Exact repeats only. Stored answers are re-checked against the tests every time.</p>
           </div>
           <div class="ladder" id="ladder"></div>
           <p class="summary" id="summary" aria-live="polite"></p>
           <div class="notice" id="notice" role="status"></div>
         </section>
 
+        <section class="block card" id="answerCard" aria-labelledby="answerTitle" hidden>
+          <div class="answer-head">
+            <span class="lvl" id="answerState"></span>
+            <h2 id="answerTitle"></h2>
+            <button class="ghost-btn" id="copyAnswer" type="button">Copy</button>
+          </div>
+          <p class="answer-fail" id="answerFail" hidden></p>
+          <pre class="codeblock" id="answerBlock" tabindex="0"><code id="answerCode"></code></pre>
+        </section>
+
         <section class="block two">
           <div class="card">
-            <h2>Estimated cloud cost avoided <span class="tag">ESTIMATE</span></h2>
+            <div class="head"><h2>Estimated cost avoided</h2><button class="info" data-info="avoided"></button></div>
             <div class="big num" id="avoided">$0.000000</div>
             <p class="sub" id="sessionLine">This server session</p>
             <div class="solvedbar" id="solvedBar" aria-hidden="true"></div>
@@ -512,24 +596,22 @@
             <p class="alltime" id="allTime"></p>
           </div>
           <div class="card measured">
-            <h2>Measured on the benchmark</h2>
-            <div class="big num" id="localShare">–</div>
+            <div class="head"><h2>Benchmark result</h2><button class="info" data-info="measured"></button></div>
+            <div class="big num" id="localShare">…</div>
             <p class="sub" id="localLine"></p>
             <table class="compare num" id="compare"></table>
-            <p class="hint" id="measuredNote"></p>
           </div>
         </section>
 
         <section class="block card">
-          <h2>Savings calculator <span class="tag">PROJECTION</span></h2>
+          <div class="head"><h2>Savings projection</h2><button class="info" data-info="projection"></button></div>
           <div class="calc">
             <div>
               <label for="spend">Monthly cloud spend</label>
               <div class="money"><span>$</span><input id="spend" type="number" min="0" step="10" value="100" inputmode="decimal"></div>
-              <p class="hint">What you pay for AI coding in the cloud today.</p>
             </div>
             <div>
-              <label for="share">Share of tasks solved locally: <span class="share-val num" id="shareVal">–</span></label>
+              <label for="share">Share of tasks solved locally: <span class="share-val num" id="shareVal">…</span></label>
               <div class="slider">
                 <input id="share" type="range" min="0" max="100" step="0.1" value="30" aria-describedby="measuredLabel">
                 <div class="marker" id="measuredMark" hidden>
@@ -537,12 +619,10 @@
                   <span class="mlabel" id="measuredLabel"></span>
                 </div>
               </div>
-              <p class="hint">Default 30%. The marker is the measured share; real work will be lower.</p>
             </div>
             <div class="result">
               <label id="savingHead">Estimated saving</label>
-              <div class="big num" id="saving">–</div>
-              <p class="hint">A projection, not a measurement: it assumes tasks solved locally would have cost the average cloud price, and it ignores electricity and hardware. The Pi's answers vary between runs; a failed answer is caught by the tests and escalated.</p>
+              <div class="big num" id="saving">…</div>
             </div>
           </div>
         </section>
@@ -551,12 +631,10 @@
       <!-- ============ MODELS ============ -->
       <div class="screen" id="screen-models" hidden>
         <h2 class="title">Models</h2>
-        <p class="lead">Find the models on this computer and your network, then put them in the order the ladder should try them.</p>
         <div class="grid2 models">
           <section class="card" aria-labelledby="findTitle">
-            <h2 id="findTitle">Find models</h2>
+            <div class="head"><h2 id="findTitle">Find models</h2><button class="info" data-info="find"></button></div>
             <button class="btn" id="detectBtn" type="button">Detect local models</button>
-            <p class="hint">Asks Ollama (port 11434), LM Studio (1234) and llama.cpp (8080, 8081) on this computer which models they serve. It only reads; nothing is started or stopped.</p>
             <div class="found" id="detectOut" aria-live="polite"></div>
             <div style="margin-top:22px; padding-top:18px; border-top:1px solid var(--line)">
               <label class="f" for="addrInput">Add a machine by address</label>
@@ -564,17 +642,43 @@
                 <input id="addrInput" type="url" class="code" spellcheck="false" autocomplete="off" placeholder="http://192.168.1.14:8080/v1" style="flex:1; min-width:12em">
                 <button class="ghost-btn" id="probeBtn" type="button" style="padding:10px 16px">Probe</button>
               </div>
-              <p class="hint">For example a Raspberry Pi running llama-server on your network.</p>
               <div class="found" id="probeOut" aria-live="polite"></div>
             </div>
           </section>
           <section class="card" aria-labelledby="rungsTitle">
-            <h2 id="rungsTitle">Your ladder</h2>
-            <p class="order-line"><span data-icon="arrow"></span>Cheapest and fastest first. The first answer that passes your tests wins.</p>
+            <div class="head"><h2 id="rungsTitle">Ladder</h2><button class="info" data-info="ladder"></button></div>
             <ol class="rungs" id="rungList"></ol>
-            <div class="row" style="margin-top:16px; justify-content:space-between">
+            <div class="row ladder-actions">
               <span class="dirty" id="dirtyFlag" hidden></span>
-              <button class="btn" id="saveLadder" type="button">Save ladder</button>
+              <div class="row" style="margin-left:auto">
+                <div class="seg" role="radiogroup" aria-labelledby="colorsLabel">
+                  <span id="colorsLabel">Colours:</span>
+                  <span class="seg-opts">
+                    <label><input type="radio" name="colorMode" id="colorDefault" value="default">Default</label>
+                    <label><input type="radio" name="colorMode" id="colorCustom" value="custom">Custom</label>
+                  </span>
+                </div>
+                <button class="ghost-btn" id="addRungBtn" type="button" aria-expanded="false" aria-controls="addRungForm">Add rung</button>
+                <button class="btn" id="saveLadder" type="button">Save ladder</button>
+              </div>
+            </div>
+            <div class="addform" id="addRungForm" hidden>
+              <div class="fields">
+                <div class="full"><label class="f" for="arName">Name</label><input id="arName" type="text" maxlength="60" autocomplete="off" placeholder="Office PC"></div>
+                <div class="full"><label class="f" for="arUrl">Address</label>
+                  <div class="row">
+                    <input id="arUrl" type="url" class="code" spellcheck="false" autocomplete="off" placeholder="http://192.168.1.14:8080/v1" style="flex:1; min-width:12em">
+                    <button class="ghost-btn" id="arFind" type="button">Find models</button>
+                  </div>
+                </div>
+                <div class="full" id="arPickWrap" hidden><label class="f" for="arPick">Models found</label><select id="arPick"></select></div>
+                <div class="full"><label class="f" for="arModel">Model</label><input id="arModel" type="text" class="code" spellcheck="false" autocomplete="off" placeholder="model-name"></div>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <button class="btn" id="arAdd" type="button">Add</button>
+                <button class="ghost-btn" id="arCancel" type="button">Cancel</button>
+              </div>
+              <div class="msg" id="arMsg" role="status"></div>
             </div>
             <div class="msg" id="ladderMsg" role="status"></div>
           </section>
@@ -584,39 +688,34 @@
       <!-- ============ CLOUD AND BUDGET ============ -->
       <div class="screen" id="screen-cloud" hidden>
         <h2 class="title">Cloud and Budget</h2>
-        <p class="lead" id="cloudLead">The cloud rung is the last resort: it runs only when every local rung has failed the tests.</p>
-        <div class="grid2">
+        <p class="lead" id="cloudLead" hidden></p>
+        <div class="grid2 cloud">
           <div class="stack">
             <section class="card" aria-labelledby="provTitle">
-              <h2 id="provTitle">Cloud provider</h2>
+              <div class="head"><h2 id="provTitle">Provider</h2><button class="info" data-info="provider"></button></div>
               <div class="choice" role="radiogroup" aria-label="Provider">
-                <label><input type="radio" name="prov" id="provMeta" value="meta"><span><b>Meta Muse Spark <span class="tag">tested</span></b><small id="metaInfo">api.meta.ai</small></span></label>
-                <label><input type="radio" name="prov" id="provOai" value="openai_compatible"><span><b>OpenAI-compatible <span class="tag untested">untested</span></b><small>Any /v1/chat/completions endpoint. Not tried against a real service.</small></span></label>
+                <label><input type="radio" name="prov" value="meta"><b>Meta</b></label>
+                <label><input type="radio" name="prov" value="openai"><b>OpenAI</b></label>
+                <label><input type="radio" name="prov" value="claude"><b>Claude</b></label>
+                <label><input type="radio" name="prov" value="gemini"><b>Gemini</b></label>
+                <label><input type="radio" name="prov" value="custom"><b>Custom</b></label>
               </div>
               <div id="metaFields">
                 <label class="f" for="effort">Effort</label>
                 <select id="effort">
-                  <option value="minimal">minimal (cheapest, the measured setting)</option>
+                  <option value="minimal">minimal (cheapest)</option>
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
                 </select>
               </div>
               <div class="fields" id="oaiFields" hidden>
-                <div class="full">
-                  <span class="f" id="presetLabel">Fill in for a provider</span>
-                  <div class="row presets" role="group" aria-labelledby="presetLabel">
-                    <button class="ghost-btn" type="button" data-preset="openai">OpenAI</button>
-                    <button class="ghost-btn" type="button" data-preset="claude">Claude (Anthropic)</button>
-                    <button class="ghost-btn" type="button" data-preset="gemini">Gemini (Google)</button>
-                  </div>
-                  <p class="hint" id="presetNote" hidden></p>
-                </div>
+                <div class="full head lab" id="presetHead" hidden><span class="f" id="presetTitle"></span><button class="info" data-info="presets"></button></div>
+                <div class="full head lab" id="customHead" hidden><span class="f">Custom server</span><button class="info" data-info="custom"></button></div>
                 <div class="full"><label class="f" for="oaiUrl">Base URL</label><input id="oaiUrl" type="url" class="code" spellcheck="false" autocomplete="off" placeholder="https://api.example.com/v1"></div>
                 <div class="full"><label class="f" for="oaiModel">Model</label><input id="oaiModel" type="text" class="code" spellcheck="false" autocomplete="off" placeholder="model-name"></div>
                 <div><label class="f" for="oaiIn">Price per million input tokens (USD)</label><input id="oaiIn" type="number" min="0" step="0.01" inputmode="decimal" placeholder="1.25"></div>
                 <div><label class="f" for="oaiOut">Price per million output tokens (USD)</label><input id="oaiOut" type="number" min="0" step="0.01" inputmode="decimal" placeholder="4.25"></div>
-                <p class="hint full" style="margin:0">Prices are required so the budget can count this provider's spend. Check the provider's pricing page.</p>
               </div>
               <div class="row" style="margin-top:16px">
                 <button class="btn" id="saveCloud" type="button">Save cloud settings</button>
@@ -625,74 +724,94 @@
               <p class="hint" id="cloudTierNote"></p>
               <div class="msg" id="cloudMsg" role="status"></div>
             </section>
+          </div>
+          <div class="stack">
+            <section class="card" aria-labelledby="budgetTitle">
+              <div class="head"><h2 id="budgetTitle">Monthly budget</h2><button class="info" data-info="budget"></button></div>
+              <div class="row" style="justify-content:space-between">
+                <span class="bstate ok" id="bState"></span>
+                <span class="num" style="font-size:1.6rem; font-weight:800" id="bPct"></span>
+              </div>
+              <div class="bbar bigbar" id="bBar"><span></span></div>
+              <div class="bnums num"><span id="bSpent"></span><span id="bRemain"></span></div>
+              <label class="f" for="limitInput" style="margin-top:18px">Limit per calendar month (USD)</label>
+              <div class="money"><span>$</span><input id="limitInput" type="number" min="0" step="1" inputmode="decimal" placeholder="no limit"></div>
+              <div class="row" style="margin-top:12px"><button class="btn" id="saveBudget" type="button">Save budget</button></div>
+              <div class="msg" id="budgetMsg" role="status"></div>
+            </section>
             <section class="card" aria-labelledby="keyTitle">
-              <h2 id="keyTitle">Your API keys</h2>
+              <div class="head"><h2 id="keyTitle">API keys</h2><button class="info" data-info="keys"></button></div>
               <ul class="rungwaits" id="rungWaits" aria-label="Cloud rungs waiting for a key" hidden></ul>
               <ul class="keylist" id="keyList"></ul>
               <h3 style="margin:0 0 10px">Add a key</h3>
               <div class="fields">
                 <div><label class="f" for="keyName">Name</label><input id="keyName" type="text" maxlength="40" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Meta personal"></div>
-                <div><label class="f" for="keyProvider">Provider</label><select id="keyProvider"><option>Meta</option><option>OpenAI</option><option>Claude (Anthropic)</option><option>Gemini (Google)</option><option>Other</option></select></div>
+                <div><label class="f" for="keyProvider">Provider</label><select id="keyProvider"><option value="Meta">Meta</option><option value="OpenAI">OpenAI</option><option value="Claude (Anthropic)">Claude</option><option value="Gemini (Google)">Gemini</option><option value="Other">Custom</option></select></div>
                 <div class="full"><label class="f" for="keyInput">Key</label><input id="keyInput" type="password" class="code" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Paste a key"></div>
               </div>
               <div class="row" style="margin-top:12px"><button class="btn" id="saveKey" type="button">Save</button></div>
-              <p class="hint">Use a short label for the name. A key is never shown again after you save it. Choose which rung uses it on the Models screen. Only a key marked Meta can be used by a rung that calls Meta, and that is the only kind of key ever used without you choosing it.</p>
               <div class="msg" id="keyMsg" role="status"></div>
             </section>
           </div>
-          <section class="card" aria-labelledby="budgetTitle">
-            <h2 id="budgetTitle">Monthly budget</h2>
-            <div class="row" style="justify-content:space-between">
-              <span class="bstate ok" id="bState"></span>
-              <span class="num" style="font-size:1.6rem; font-weight:800" id="bPct"></span>
-            </div>
-            <div class="bbar bigbar" id="bBar"><span></span></div>
-            <div class="bnums num"><span id="bSpent"></span><span id="bRemain"></span></div>
-            <p class="hint">Spend is tracked from this app's own cloud calls in its log, not read from the provider's account.</p>
-            <p class="hint">WARNING from 80% of the limit; BLOCKED at 100%, when the cloud rung is skipped until you raise or remove the limit.</p>
-            <label class="f" for="limitInput" style="margin-top:18px">Limit per calendar month (USD)</label>
-            <div class="money"><span>$</span><input id="limitInput" type="number" min="0" step="1" inputmode="decimal" placeholder="no limit"></div>
-            <p class="hint">Leave blank for no limit.</p>
-            <div class="row" style="margin-top:12px"><button class="btn" id="saveBudget" type="button">Save budget</button></div>
-            <div class="msg" id="budgetMsg" role="status"></div>
-          </section>
         </div>
       </div>
 
       <!-- ============ ABOUT ============ -->
       <div class="screen about" id="screen-about" hidden>
-        <h2 class="title">About</h2>
+        <h2 class="title">Proveo</h2>
         <section class="block card">
-          <p class="pitch">Eco mode for AI coding: let the tests choose the model, cheapest first.</p>
-          <p>Works for tasks with tests. Each answer is checked against the task's tests; the first rung whose answer passes wins, and more expensive rungs are never called.</p>
+          <h2>What it is</h2>
+          <p class="pitch">Let your tests choose the model. Cheapest first.</p>
+          <p>Proveo gives a coding task to the cheapest model you have and runs the answer against your tests. If the answer fails, the next model up gets the task. A more expensive model is only called when the cheaper ones could not pass.</p>
         </section>
         <section class="block card">
           <h2>How it works</h2>
           <ol>
-            <li>Verified memory: an exact repeat of a task reuses a stored answer, re-checked against the tests.</li>
-            <li>Local rungs, in your order: for example a Raspberry Pi 5, then a PC with a GPU.</li>
-            <li>The cloud rung last, only if every local answer failed, and only while the monthly budget allows.</li>
+            <li>Verified memory. An exact repeat of a task reuses a stored answer, and that answer is checked against the tests again.</li>
+            <li>Your local models, in the order you set. For example a Raspberry Pi 5, then a PC with a GPU.</li>
+            <li>The cloud, last unless you move it. It is only called if every rung before it failed, and only while the monthly budget allows.</li>
           </ol>
+          <p>The first answer that passes your tests wins, and no rung after it is called.</p>
+        </section>
+        <section class="block card">
+          <h2>What it works for</h2>
+          <p>Tasks that have tests, because the tests pick the winner. There are three ways to run one:</p>
+          <ul>
+            <li>Benchmark task: pick one from the built-in set. Its tests are already written.</li>
+            <li>Code task: describe a function, name it and write your own checks, as a table or as code.</li>
+            <li>Command line: <code>eco.py</code> runs a benchmark task from a copy of the repository.</li>
+          </ul>
+          <p>The ladder shows each rung as it runs: passed, failed or skipped, with the reason, the time and the cost.</p>
+          <p>Estimated cost avoided is what the cloud would probably have charged for tasks solved locally. The savings projection scales that up. Both are estimates. Only the benchmark result is measured.</p>
         </section>
         <section class="block card">
           <h2>Honest limits</h2>
           <ul>
             <li>The measured numbers come from small benchmark coding tasks, one run each.</li>
-            <li>The Pi's answers vary between runs; a failed answer is caught by the tests and escalated.</li>
-            <li>The code check runs in a subprocess with a time limit. It is not a real sandbox.</li>
-            <li>It only helps when a task has tests. Tests that miss a case let a wrong answer pass.</li>
-            <li>Savings figures are estimates or projections unless labelled as measured.</li>
-            <li>The OpenAI-compatible cloud provider is untested.</li>
+            <li>The Pi's answers vary between runs. A failed answer is caught by the tests and escalated.</li>
+            <li>The code check runs in a subprocess with a time limit. It is not a real sandbox, and the code a model writes runs on this computer.</li>
+            <li>Weak tests let a wrong answer pass.</li>
+            <li>Savings figures are estimates unless marked as measured.</li>
           </ul>
+        </section>
+        <section class="block card">
+          <h2>Your keys and your data</h2>
+          <p>Keys: in the desktop app they are encrypted on this computer. With the command line server they are held in memory only. A key goes only to the rung that names it, or to the default Meta rung if it is your only Meta key.</p>
+          <p>What leaves this computer: Proveo sends your task description only to the model servers you set up, and nothing to anywhere else. Your checks stay here.</p>
+          <p>Log and verified memory: both are files on this computer, in <code>%APPDATA%\Proveo\eco</code> for the installed app and in the repository's <code>results</code> folder for the command line. The log records each run: the rungs tried, pass or fail, tokens, time and cost. It does not keep your description, your checks or the answers. Verified memory keeps each passing answer.</p>
+          <p>Budget: spend is added up from this app's own cloud calls this calendar month, using the prices set on each rung. It does not see your provider's account. You get a warning from 80% of the limit, and at 100% cloud rungs are skipped. The desktop app and the command line keep separate budgets.</p>
+        </section>
+        <section class="block card">
+          <h2>Version</h2>
+          <p class="num">Version 0.1.0</p>
+          <p><a href="https://github.com/MooreHaww/pi-edge-router" target="_blank" rel="noopener">Repository on GitHub</a></p>
         </section>
       </div>
     </main>
-
-    <footer>
-      <div class="wrap"><p>Works for tasks with tests. The code check runs in a subprocess with a time limit, not a real sandbox.</p></div>
-    </footer>
   </div>
 </div>
+<div class="pop" id="infoPop" role="status" hidden></div>
+<div class="pop color-pop" id="colorPop" role="dialog" aria-label="Choose a colour" hidden></div>
 
 <script>
 (() => {
@@ -730,7 +849,8 @@
   const S = {
     eco: true, cloudAllowed: false, memory: false, tasks: [], measuredShare: null, polling: null,
     settings: null, draft: null, dirty: false, colors: {}, names: {}, budget: null,
-    keys: [], storedKeys: new Set(), confirmKey: null, preset: null,
+    keys: [], storedKeys: new Set(), confirmKey: null, picked: null, colorMode: "default", found: { detect: [], probe: [], detected: false, probed: false },
+    checks: [["", ""]], codeMode: false,
     mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null,
   };
   const desktop = () => (typeof window.ecoDesktop === "object" && window.ecoDesktop) || null;
@@ -798,6 +918,63 @@
     el.classList.add("show");
   }
 
+  /* ---------- Info buttons ---------- */
+  // Each is [aria-label, text]. Fixed strings, shown as text.
+  const INFO = {
+    ladder: ["About the ladder", "A task goes up the rungs in order, cheapest first. Each answer runs against the tests. The first pass wins, and later rungs are not called."],
+    memory: ["About verified memory", "An exact repeat of a task reuses a stored answer. The answer is re-checked against the tests every time."],
+    codetask: ["How a code task works", "1. You describe the function and add checks.\n2. The app asks the cheapest model and runs your checks on its answer.\n3. If a check fails, it asks the next model, until one passes."],
+    check: ["About the code check", "It runs in a subprocess with a time limit. It is not a sandbox."],
+    avoided: ["About the savings estimate", "An estimate of what the cloud would have charged for tasks solved locally. It is not a measured saving."],
+    measured: ["About the measured figure", "Measured on small coding tasks, one run each."],
+    projection: ["About the savings projection", "A projection, not a measurement. It assumes local tasks would have cost the average cloud price, and ignores electricity and hardware. The marker is the measured share. Real work will be lower."],
+    find: ["About finding models", "Asks Ollama (port 11434), LM Studio (1234) and llama.cpp (8080, 8081) on this computer which models they serve. It only reads. Use an address for another machine, such as a Raspberry Pi."],
+    provider: ["About the provider choice", "Only Meta Muse Spark has been tested in this app."],
+    custom: ["About Custom", "For any server that speaks the OpenAI-compatible chat format. Add its base URL, model and prices."],
+    presets: ["About presets and prices", "A preset fills in the URL and model. Prices let the budget count this provider's spend: see the provider's pricing page."],
+    keys: ["About API keys", "Held in memory, or encrypted on this computer in the desktop app. A key is never shown again after you save it. Choose which rung uses it on the Models screen. Only a key marked Meta can call Meta, and only that kind is used without you choosing it."],
+    budget: ["About the budget", "Spend is tracked from this app's own cloud calls, not your provider's account. WARNING from 80% of the limit. BLOCKED at 100%: cloud rungs are skipped. Leave the limit blank for no limit."],
+  };
+  let infoOpen = null;
+  function placePop(pop, anchor) {
+    const b = anchor.getBoundingClientRect(), gap = 8, edge = 12;
+    const left = Math.max(edge, Math.min(b.left, document.documentElement.clientWidth - pop.offsetWidth - edge));
+    const above = b.bottom + gap + pop.offsetHeight > window.innerHeight && b.top - gap - pop.offsetHeight > 0;
+    pop.style.left = `${left + window.scrollX}px`;
+    pop.style.top = `${(above ? b.top - gap - pop.offsetHeight : b.bottom + gap) + window.scrollY}px`;
+  }
+  const placeInfo = () => placePop($("infoPop"), infoOpen);
+  function closeInfo(refocus) {
+    if (!infoOpen) return;
+    const was = infoOpen;
+    infoOpen = null;
+    was.setAttribute("aria-expanded", "false");
+    $("infoPop").hidden = true;
+    if (refocus) was.focus();
+  }
+  function openInfo(btn) {
+    closeInfo();
+    closeColor();
+    infoOpen = btn;
+    btn.setAttribute("aria-expanded", "true");
+    $("infoPop").hidden = false;
+    $("infoPop").textContent = INFO[btn.dataset.info][1];
+    placeInfo();
+  }
+  document.querySelectorAll(".info").forEach((btn) => {
+    btn.type = "button";
+    btn.setAttribute("aria-label", INFO[btn.dataset.info][0]);
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-controls", "infoPop");
+    btn.append(icon("info"));
+    btn.addEventListener("click", () => { if (infoOpen === btn) closeInfo(); else openInfo(btn); });
+  });
+  document.addEventListener("click", (e) => {
+    if (infoOpen && !e.target.closest(".info") && !$("infoPop").contains(e.target)) closeInfo();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeInfo(true); closeColor(true); } });
+  window.addEventListener("resize", () => { if (infoOpen) placeInfo(); if (colorOpen) placePop($("colorPop"), colorOpen); });
+
   /* ---------- Navigation ---------- */
   const SCREENS = ["run", "models", "cloud", "about"];
   function showScreen() {
@@ -807,7 +984,7 @@
       if (a.dataset.screen === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
   }
-  window.addEventListener("hashchange", () => { showScreen(); window.scrollTo(0, 0); });
+  window.addEventListener("hashchange", () => { closeInfo(); closeColor(); showScreen(); window.scrollTo(0, 0); });
 
   // Logo: /assets/logo.svg if it exists, otherwise the three-dot mark.
   const logo = $("logoImg");
@@ -817,10 +994,18 @@
   if (logo.complete && logo.naturalWidth > 0) logoOk();
 
   /* ---------- Tiers, colours, names ---------- */
-  function colorsFor(tiers) {
+  function validHex(c) { return typeof c === "string" && /^#[0-9A-Fa-f]{6}$/.test(c); }
+  function contrastOnCard(hex) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+  }
+  function colorsFor(tiers, mode) {
     const map = {}, used = new Set();
+    const own = (t) => mode === "custom" && validHex(t.color);
+    for (const t of tiers) if (own(t)) used.add(t.color);
     for (const t of tiers) {
       let c = null;
+      if (own(t)) { map[t.id] = t.color; continue; }
       if (t.kind === "local" && t.id === "pi") c = HEX.pi;
       else if (t.kind === "local" && t.id === "pc") c = HEX.pc;
       if (t.provider === "meta") c = EFFORT_BLUE[(t.flags && t.flags.effort) || "minimal"] || EFFORT_BLUE.medium;  // same effort, same blue
@@ -831,10 +1016,18 @@
     return map;
   }
   function host(url) { try { return new URL(url).host; } catch (e) { return url; } }
+  // Same rule as detect.endpoint_key: one spelling per endpoint, so a server is not listed or marked twice.
+  function endpointKey(url) {
+    let u;
+    try { u = new URL(String(url).trim()); } catch (e) { return String(url).trim(); }
+    const name = u.hostname.replace(/^\[|\]$/g, "").replace(/\.+$/, "").toLowerCase();
+    const machine = ["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(name) ? "localhost" : name;
+    return `${u.protocol}//${machine}:${u.port || { "http:": 80, "https:": 443 }[u.protocol]}${u.pathname.replace(/\/+$/, "") || "/v1"}`;
+  }
   function hwLine(t) {
     if (t.kind === "local") return `${t.model} · ${host(t.base_url)}` + (t.flags && t.flags.disable_thinking ? " · thinking off" : "");
     if (t.provider === "meta") return `${t.model} · ${(t.flags && t.flags.effort) || "minimal"} effort` + (mayUseOnlyKey(t) ? "" : ` · ${host(t.base_url)}`);
-    return `${t.model} · ${host(t.base_url)} · untested provider`;
+    return `${t.model} · ${host(t.base_url)}`;
   }
   const enabled = () => (S.settings ? S.settings.tiers.filter((t) => t.enabled) : []);
   const ecoOffTier = () => enabled().find((t) => t.kind === "cloud") || null;
@@ -851,6 +1044,9 @@
     const problem = `This key looks like ${known[1] === "OpenAI" ? "an" : "a"} ${known[1]} key, but it is labelled ${label}. Choose the right provider.`;
     return onList ? problem : `${problem} ${known[1]} is not on the list, so choose Other.`;
   }
+  // What the page calls a stored key label. The stored values never change.
+  const LABEL_SHOWN = [["Claude (Anthropic)", "Claude"], ["Gemini (Google)", "Gemini"], ["Other", "Custom"]];
+  function shownLabels(text) { return LABEL_SHOWN.reduce((s, [stored, shown]) => s.split(stored).join(shown), String(text)); }
   const isKeyWait = (why) => KEY_WAITS.includes(why) || String(why).startsWith(META_KEY_REFUSAL);
   const keyWait = (t) => (t.kind === "cloud" && S.settings.rung_keys[t.id] && S.settings.rung_keys[t.id].reason) || "";
   // Same rules as eco_core (may_use_only_key, calls_meta_host, key_name_for_tier), for rungs with unsaved edits.
@@ -888,10 +1084,10 @@
     const preset = Object.values(PRESETS).find((p) => host(p.base_url) === host(t.base_url));
     const service = t.provider === "meta" ? "Meta" : preset && preset.name;
     return known && service && providerOf(known) !== service
-      ? `This rung is set up for ${service}, but that key is for ${providerOf(known)}. It will still be sent there.` : "";
+      ? shownLabels(`This rung is set up for ${service}, but that key is for ${providerOf(known)}. It will still be sent there.`) : "";
   }
   function keyWaitNote(reason) {
-    return h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), reason);
+    return h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), shownLabels(reason));
   }
   const keyWarnNote = (text) => h("p", { class: "keywait" }, h("b", null, "Check this:"), text);
 
@@ -906,7 +1102,6 @@
     tiers.forEach((t, i) => {
       if (i) lad.append(h("div", { class: "arrow", "aria-hidden": "true", "data-after": tiers[i - 1].id }, icon("arrow")));
       const el = h("div", { class: "step waiting", "data-tier": t.id, style: `--c:${S.colors[t.id]}` },
-        h("div", { class: "rung" }, `Rung ${i + 1} · ${t.kind === "cloud" ? "paid" : "local"}`),
         h("div", { class: "name" }, h("i", { "aria-hidden": "true" }), t.name),
         h("div", { class: "hw" }, hwLine(t)),
         h("div", { class: "badge" }), h("p", { class: "detail" }), h("div", { class: "metrics" }));
@@ -940,7 +1135,7 @@
   function memoryIdle() {
     if (!S.eco) setStep("memory", "bypassed", "BYPASSED", "skip", "Eco mode is off");
     else if (!S.memory) setStep("memory", "off", "OFF", "skip", "Memory is off on this server");
-    else setStep("memory", "waiting", "WAITING", "wait", "Checked first, before any model runs");
+    else setStep("memory", "waiting", "WAITING", "wait", "");
   }
   function idleRung(t) {
     const off = ecoOffTier();
@@ -972,10 +1167,9 @@
     const fromMemory = !!(mem && mem.passed);
     const budgetStop = /budget limit reached/.test(job.message || "");
     if (!job.eco) setStep("memory", "bypassed", "BYPASSED", "skip", "Eco mode is off");
-    else if (mem && mem.passed) setStep("memory", "pass", "HIT", "check", "From memory, re-checked against the tests", mem);
+    else if (mem && mem.passed) setStep("memory", "pass", "HIT", "check", "Re-checked against the tests", mem);
     else if (mem) setStep("memory", "miss", "MISS", "skip",
-                          mem.error ? "Stored answer failed the re-check, so it was ignored. Running the ladder."
-                                    : "No verified answer for this exact task. Running the ladder.", mem);
+                          mem.error ? "Stored answer failed the re-check" : "No stored answer for this task", mem);
     else if (job.current === "memory") setStep("memory", "running", "CHECKING", "spin", "Looking for a verified answer…");
     else memoryIdle();
     for (const t of tiers) {
@@ -1005,18 +1199,19 @@
     } else if (job.result) {
       const r = job.result;
       $("summary").textContent = r.solved_by === "memory"
-        ? `Answered from memory, re-checked against the tests, in ${r.seconds.toFixed(1)} s · cost ${money(0)} · cloud cost avoided ${money(r.estimated_cloud_cost_avoided_usd)} (estimate)`
+        ? `Answered from memory in ${r.seconds.toFixed(1)} s · cost ${money(0)} · cloud cost avoided ${money(r.estimated_cloud_cost_avoided_usd)} (estimate)`
         : r.solved_by
         ? `Solved by ${nameOf(r.solved_by)} in ${r.seconds.toFixed(1)} s · actual cost ${money(r.cost_usd)} · cloud cost avoided ${money(r.estimated_cloud_cost_avoided_usd)} (estimate)`
         : `No rung passed the tests · ${r.seconds.toFixed(1)} s · actual cost ${money(r.cost_usd)}`;
     } else {
       $("summary").textContent = "Nothing was run.";
     }
+    renderAnswer(job);
     notice(budgetStop ? "Budget limit reached: the cloud rung was skipped. Raise or remove the limit on the Cloud and Budget screen."
       : isKeyWait(job.message) ? `${[...new Set(job.skipped.map((id) => job.skip_reasons[id]))].filter(isKeyWait).map((why) => {
           const rungs = job.skipped.filter((id) => job.skip_reasons[id] === why).map(nameOf);
           return `${rungs.join(", ")} waited: ${why}.`;
-        }).join(" ")} Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
+        }).join(" ")} Add keys on Cloud and Budget. Choose each rung's key on Models.`
       : job.message);
   }
 
@@ -1025,9 +1220,12 @@
     S.running = on;
     $("runBtn").disabled = on || !canRun();
     $("runBtn").textContent = on ? "Running…" : "Run";
+    const why = S.mode === "custom" && !on ? codeTaskProblem() : "";
+    $("runWhy").hidden = !why;
+    $("runWhy").textContent = why;
   }
   function canRun() {
-    if (S.mode === "custom") return true;
+    if (S.mode === "custom") return !codeTaskProblem();
     const o = $("taskSelect").selectedOptions[0];
     return !!(o && o.dataset.file);
   }
@@ -1046,9 +1244,12 @@
     S.lastJob = null;
     resetLadder();
     showMsg($("customMsg"));
+    clearFieldErrors();
+    S.answerShown = false;
+    $("answerCard").hidden = true;
     let body;
     if (S.mode === "custom") {
-      body = { custom: { prompt: $("cPrompt").value, entry: $("cEntry").value.trim(), tests_code: $("cTests").value }, eco: S.eco };
+      body = { custom: { prompt: codeTaskPrompt($("cPrompt").value, $("cEntry").value), entry: $("cEntry").value.trim(), tests_code: currentChecks() }, eco: S.eco };
     } else {
       const o = $("taskSelect").selectedOptions[0];
       body = { task_file: o.dataset.file, task_id: o.value, eco: S.eco };
@@ -1058,7 +1259,7 @@
       const { job_id } = await post("/api/solve", body);
       poll(job_id);
     } catch (e) {
-      if (S.mode === "custom") showMsg($("customMsg"), "error", "Please check your task:", e.message);
+      if (S.mode === "custom") showTaskError(e.message);
       else notice("Could not start: " + e.message);
       setRunning(false);
     }
@@ -1069,17 +1270,192 @@
     $("tabCustom").setAttribute("aria-selected", String(mode === "custom"));
     $("panelBench").hidden = mode !== "bench";
     $("panelCustom").hidden = mode !== "custom";
+    $("answerCard").hidden = mode !== "custom" || !S.answerShown;
     setRunning(S.running);
   }
   function counts() {
-    $("cPromptCount").textContent = `${$("cPrompt").value.length.toLocaleString()} / 4,000 characters`;
+    $("cPromptCount").textContent = `${$("cPrompt").value.length.toLocaleString()} / 3,900 characters`;
     $("cTestsCount").textContent = `${$("cTests").value.length.toLocaleString()} / 10,000 characters`;
   }
-  function fillExample() {
-    $("cPrompt").value = $("cPrompt").placeholder;
-    $("cEntry").value = $("cEntry").placeholder;
-    $("cTests").value = $("cTests").placeholder;
+
+  /* ---------- Code task ---------- */
+  const EXAMPLES = {
+    palindrome: {
+      prompt: "Return True if the string s reads the same forwards and backwards, ignoring case and anything that is not a letter or digit. Return False otherwise.",
+      entry: "is_palindrome",
+      checks: [["is_palindrome('racecar')", "True"], ["is_palindrome('A man, a plan, a canal: Panama')", "True"], ["is_palindrome('hello')", "False"], ["is_palindrome('')", "True"]]
+    },
+    fizzbuzz: {
+      prompt: "Take a number n and return a list of strings for the numbers 1 to n. Use 'Fizz' for multiples of 3, 'Buzz' for multiples of 5, 'FizzBuzz' for multiples of both, and the number itself as a string otherwise.",
+      entry: "fizzbuzz",
+      checks: [["fizzbuzz(1)", "['1']"], ["fizzbuzz(5)", "['1', '2', 'Fizz', '4', 'Buzz']"], ["fizzbuzz(15)[-1]", "'FizzBuzz'"], ["fizzbuzz(0)", "[]"]]
+    },
+    merge: {
+      prompt: "Take a list of [start, end] pairs and merge the pairs that overlap or touch. Return the merged pairs as a list of lists, sorted by start.",
+      entry: "merge_intervals",
+      checks: [["merge_intervals([[1, 3], [2, 6], [8, 10]])", "[[1, 6], [8, 10]]"], ["merge_intervals([[1, 4], [4, 5]])", "[[1, 5]]"], ["merge_intervals([[5, 6], [1, 2]])", "[[1, 2], [5, 6]]"], ["merge_intervals([])", "[]"]]
+    }
+  };
+  // A description alone never names the function, and a model that picks another name fails every check.
+  function codeTaskPrompt(description, entry) {
+    return `Write a Python function named ${entry.trim()}. ${description.trim()}`;
+  }
+  function checksToCode(rows) {
+    return rows.filter(([call, want]) => call.trim() || want.trim())
+      .map(([call, want]) => `assert ${call.trim()} == ${want.trim()}`).join("\n");
+  }
+  /* A line as [call, expected], or null unless it is exactly one `assert a == b`. Quotes and brackets are skipped. */
+  function splitCheck(line) {
+    const m = /^assert\s+(.+)$/.exec(line.trim());
+    if (!m) return null;
+    const text = m[1];
+    let quote = "", depth = 0, at = -1;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quote) { if (c === "\\") i++; else if (c === quote) quote = ""; }
+      else if (c === "'" || c === '"') quote = c;
+      else if ("([{".includes(c)) depth++;
+      else if (")]}".includes(c)) depth--;
+      else if (depth === 0 && (c === "," || c === "#")) return null;
+      else if (depth === 0 && text.startsWith("==", i)) {
+        if (at >= 0) return null;
+        at = i++;
+      }
+    }
+    if (quote || depth || at < 0) return null;
+    const call = text.slice(0, at).trim(), want = text.slice(at + 2).trim();
+    return call && want ? [call, want] : null;
+  }
+  /* {rows, bad}: bad is the line numbers the table can't hold, so that nothing is dropped silently. */
+  function codeToChecks(code) {
+    const rows = [], bad = [];
+    code.split("\n").forEach((line, i) => {
+      if (!line.trim()) return;
+      const row = splitCheck(line);
+      if (row) rows.push(row); else bad.push(i + 1);
+    });
+    return { rows, bad };
+  }
+  const currentChecks = () => (S.codeMode ? $("cTests").value : checksToCode(S.checks));
+  function codeTaskProblem() {
+    if (!$("cPrompt").value.trim()) return "Describe what the function should do.";
+    if (!$("cEntry").value.trim()) return "Add a function name.";
+    if (S.codeMode) return $("cTests").value.trim() ? "" : "Add at least one check.";
+    const full = ([call, want]) => call.trim() && want.trim();
+    const partial = S.checks.findIndex((row) => !full(row) && (row[0].trim() || row[1].trim()));
+    if (partial >= 0) return `Finish check ${partial + 1}, or remove it.`;
+    return S.checks.some(full) ? "" : "Add at least one check.";
+  }
+  function fieldError(id, text) {
+    const el = $(id + "Err");
+    el.hidden = !text;
+    el.replaceChildren(...(text ? [icon("warn"), h("span", null, text)] : []));
+    if (id !== "cTests" || S.codeMode) { if (text) $(id).setAttribute("aria-invalid", "true"); else $(id).removeAttribute("aria-invalid"); }
+  }
+  function clearFieldErrors() { for (const id of ["cPrompt", "cEntry", "cTests"]) fieldError(id, ""); }
+  /* The API's validation messages, in plain words and next to their field. */
+  function showTaskError(message) {
+    const unit = S.codeMode ? "Line" : "Check";
+    const tooLong = /is too long: ([\d,]+) characters \(the limit is ([\d,]+)\)/.exec(message);
+    const invalid = /^tests_code is not valid Python \(line (\d+): (.*)\)/.exec(message);
+    const uncalled = /^tests_code never calls (\S+?),/.exec(message);
+    if (tooLong && message.startsWith("prompt")) fieldError("cPrompt", `The description is too long: ${tooLong[1]} characters. The limit is ${tooLong[2]}.`);
+    else if (tooLong && message.startsWith("tests_code")) fieldError("cTests", `The checks are too long: ${tooLong[1]} characters. The limit is ${tooLong[2]}.`);
+    else if (message.startsWith("prompt")) fieldError("cPrompt", "Describe what the function should do.");
+    else if (message.startsWith("entry")) fieldError("cEntry", "Use a name like is_palindrome: letters, digits and _, not starting with a digit, and not a Python keyword.");
+    else if (invalid) fieldError("cTests", `${unit} ${invalid[1]} is not valid Python: ${invalid[2]}.`);
+    else if (uncalled) fieldError("cTests", `No check calls ${uncalled[1]}. Use the function name in each call.`);
+    else if (message.startsWith("tests_code")) fieldError("cTests", "Add at least one check, such as a line starting with assert.");
+    else showMsg($("customMsg"), "error", "Could not start:", message);
+  }
+  function codeTaskChanged() { setRunning(S.running); }
+  function renderChecks() {
+    $("cRows").replaceChildren(...S.checks.map((row, i) => {
+      const cell = (j, label, placeholder) => h("td", null, h("input", {
+        type: "text", class: "code", spellcheck: "false", autocomplete: "off", value: row[j], placeholder, "aria-label": `${label}, check ${i + 1}`,
+        oninput: (e) => { row[j] = e.target.value; fieldError("cTests", ""); codeTaskChanged(); } }));
+      return h("tr", null, cell(0, "Call", "roman_to_int('XIV')"), cell(1, "Should return", "14"),
+        h("td", null, h("button", { class: "icon-btn", type: "button", "aria-label": `Remove check ${i + 1}`, title: "Remove",
+          onclick: () => removeCheck(i) }, icon("trash"))));
+    }));
+  }
+  const rowInput = (i) => $("cRows").rows[i].querySelector("input");
+  function addCheck() {
+    S.checks.push(["", ""]);
+    renderChecks();
+    codeTaskChanged();
+    rowInput(S.checks.length - 1).focus();
+  }
+  function removeCheck(i) {
+    S.checks.splice(i, 1);
+    if (!S.checks.length) S.checks.push(["", ""]);
+    renderChecks();
+    codeTaskChanged();
+    rowInput(Math.min(i, S.checks.length - 1)).focus();
+  }
+  function showCodeMode(on) {
+    S.codeMode = on;
+    $("cCodeSwitch").setAttribute("aria-checked", String(on));
+    $("cTable").hidden = on;
+    $("cCode").hidden = !on;
     counts();
+    codeTaskChanged();
+  }
+  function toggleCodeMode() {
+    fieldError("cTests", "");
+    if (!S.codeMode) {
+      $("cTests").value = checksToCode(S.checks);
+      return showCodeMode(true);
+    }
+    const { rows, bad } = codeToChecks($("cTests").value);
+    if (bad.length) return fieldError("cTests", `Line ${bad.join(", ")} can't go in the table. Change it to assert call == result, or keep writing code.`);
+    S.checks = rows.length ? rows : [["", ""]];
+    renderChecks();
+    showCodeMode(false);
+  }
+  function fillExample(id) {
+    const ex = EXAMPLES[id];
+    clearFieldErrors();
+    showMsg($("customMsg"));
+    $("cPrompt").value = ex.prompt;
+    $("cEntry").value = ex.entry;
+    S.checks = ex.checks.map((row) => [...row]);
+    renderChecks();
+    if (S.codeMode) $("cTests").value = checksToCode(S.checks);
+    counts();
+    codeTaskChanged();
+  }
+  /* The code that passed, or the last answer and the check it failed. Page memory only. */
+  function renderAnswer(job) {
+    const card = $("answerCard");
+    S.answerShown = !!(job.custom && job.status === "done" && (job.answer || job.attempts.length));
+    card.hidden = S.mode !== "custom" || !S.answerShown;
+    if (!S.answerShown) return;
+    const a = job.answer, passed = !!(a && a.passed);
+    const mem = job.attempts.find((x) => x.tier === "memory");
+    const from = a && (a.tier === "memory" && mem ? `memory (first solved by ${nameOf(mem.stored_tier || "?")})` : nameOf(a.tier));
+    $("answerState").className = "lvl " + (passed ? "ok" : "blocked");
+    $("answerState").replaceChildren(icon(passed ? "check" : "cross"), passed ? "PASS" : "FAIL");
+    $("answerTitle").textContent = passed ? `Passing code from ${from}` : a ? `No rung passed. Last answer, from ${from}` : "No rung gave an answer";
+    $("answerFail").hidden = passed || !a;
+    $("answerFail").textContent = a && !passed ? `Failed check: ${a.first_failure.replace(/^tests line \d+: /, "")}` : "";
+    $("answerBlock").hidden = !a;
+    $("copyAnswer").hidden = !a;
+    $("copyAnswer").textContent = "Copy";
+    $("answerCode").textContent = a ? a.code : "";
+  }
+  async function copyAnswer() {
+    const btn = $("copyAnswer"), code = $("answerCode");
+    let copied = false;
+    try { await navigator.clipboard.writeText(code.textContent); copied = true; }
+    catch (e) {  // the desktop app denies the clipboard permission; a copy from a selection still works
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      try { copied = document.execCommand("copy"); } catch (e2) { copied = false; }
+    }
+    btn.textContent = copied ? "Copied" : "Press Ctrl+C to copy";
   }
 
   function setEco(on) {
@@ -1094,8 +1470,8 @@
     const line = $("modeLine");
     const tiers = enabled(), off = ecoOffTier();
     line.replaceChildren(h("b", null, S.eco ? "Eco on: " : "Eco off: "));
-    if (S.eco) line.append(tiers.length ? `${tiers.map((t) => t.name).join(", then ")}. Stops at the first answer that passes its tests.` : "no rungs are enabled.");
-    else line.append(off ? `straight to ${off.name}, the usual way.` : "no cloud rung is enabled, so there is nothing to run.");
+    if (S.eco) line.append(tiers.length ? `${tiers.map((t) => t.name).join(", then ")}.` : "no rungs are enabled.");
+    else line.append(off ? `straight to ${off.name}.` : "no cloud rung is enabled, so there is nothing to run.");
   }
 
   /* ---------- Stats, measured numbers, calculator ---------- */
@@ -1113,8 +1489,8 @@
       for (const k of keys) {
         const n = by[k] || 0;
         const c = k === "memory" ? HEX.slate : k === "none" ? HEX.none : (S.colors[k] || "#777777");
-        if (total && n) bar.append(h("span", { style: `width:${100 * n / total}%;background:${c}` }));
-        legend.append(h("span", null, h("i", { style: `background:${c}` }),
+        if (total && n) bar.append(h("span", { style: `width:${100 * n / total}%;--c:${c}` }));
+        legend.append(h("span", null, h("i", { style: `--c:${c}` }),
           `${k === "none" ? "Not solved" : k === "memory" ? "From memory" : "Solved by " + nameOf(k)}: ${n}`));
       }
       const a = s.all_time;
@@ -1138,7 +1514,7 @@
       const pct = 100 * m.local_share;
       S.measuredShare = pct;
       $("localShare").textContent = pct.toFixed(1) + "%";
-      $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved by the local rungs alone (Pi or PC).`;
+      $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved locally (Pi or PC)`;
       const rows = [
         [EFFORT_BLUE.minimal, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
         ["#C98500", `PC then cloud, minimal (${m.pc_then_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.pc_then_cloud_minimal.cost_usd)],
@@ -1146,8 +1522,8 @@
       const table = $("compare");
       table.replaceChildren(h("caption", { style: "text-align:left;color:var(--muted);font-size:.9rem;padding-bottom:4px" },
         `Held-out set, ${m.heldout_tasks} tasks: cloud cost, ${(100 * m.saving_share).toFixed(1)}% less with the ladder`));
-      for (const [c, label, v] of rows) table.append(h("tr", null, h("td", null, h("i", { style: `background:${c}` }), label), h("td", null, v)));
-      $("measuredNote").textContent = `${m.note[0].toUpperCase() + m.note.slice(1)}. The held-out set has already been used for comparison.`;
+      for (const [c, label, v] of rows) table.append(h("tr", null, h("td", null, h("i", { style: `--c:${c}` }), label), h("td", null, v)));
+      INFO.measured[1] = `${m.note[0].toUpperCase() + m.note.slice(1)}. The held-out set has already been used for comparison.`;
       const mark = $("measuredMark");
       mark.style.setProperty("--p", String(m.local_share));
       mark.className = "marker " + (m.local_share > 0.5 ? "right" : "left");
@@ -1209,9 +1585,9 @@
   /* ---------- Settings ---------- */
   function applySettings(view) {
     S.settings = view;
-    S.colors = colorsFor(view.tiers);
+    S.colors = colorsFor(view.tiers, view.color_mode);
     S.names = Object.fromEntries(view.tiers.map((t) => [t.id, t.name]));
-    if (!S.dirty) S.draft = clone(view.tiers);
+    if (!S.dirty) { S.draft = clone(view.tiers); S.colorMode = view.color_mode; }
     $("welcome").hidden = view.saved || S.welcomeDismissed;
     if (!S.running) { buildLadder(); resetLadder(); }
     modeLine();
@@ -1235,47 +1611,178 @@
     while (ids.has(id)) id = `${slug(base)}-${n++}`;
     return id;
   }
-  function addRung(server, model) {
-    const msg = $("ladderMsg");
-    if (S.draft.length >= S.settings.max_tiers) return showMsg(msg, "error", "Not added:", `the ladder has at most ${S.settings.max_tiers} rungs`);
-    const tier = { id: uniqueId(model, S.draft), name: `${model} (${server.kind})`.slice(0, 60), kind: "local",
-                   base_url: server.base_url, model, flags: {}, enabled: true };
+  function uniqueName(base, tiers) {
+    const taken = new Set(tiers.map((t) => String(t.name).trim().toLowerCase()));
+    let name = base.slice(0, 60), n = 2;
+    while (taken.has(name.toLowerCase())) { const end = ` (${n++})`; name = base.slice(0, 60 - end.length) + end; }
+    return name;
+  }
+  function insertRung(tier) {
     const firstCloud = S.draft.findIndex((t) => t.kind === "cloud");
     S.draft.splice(firstCloud < 0 ? S.draft.length : firstCloud, 0, tier);
     S.dirty = true;
     renderRungList();
-    showMsg(msg, "ok", "Added:", `${tier.name}, before the cloud rung. Press Save ladder to use it.`);
+    showMsg($("ladderMsg"), "ok", "Added:", `${tier.name}, before the cloud rung. Press Save ladder to use it.`);
   }
+  function addRung(server, model) {
+    if (S.draft.length >= S.settings.max_tiers) return showMsg($("ladderMsg"), "error", "Not added:", `the ladder has at most ${S.settings.max_tiers} rungs`);
+    insertRung({ id: uniqueId(model, S.draft), name: uniqueName(model, S.draft), kind: "local",
+                 base_url: server.base_url, model, flags: {}, enabled: true });
+  }
+  /* The Add rung form. The settings rules decide, through /api/settings/check; they are only put in plainer words here. */
+  function addressToBase(address) {
+    try { return new URL(address).pathname === "/" ? address.replace(/\/+$/, "") + "/v1" : address; } catch (e) { return address; }
+  }
+  function rungProblem(message) {
+    if (message.includes("base_url")) return "The address must start with http:// or https://, end in /v1 and contain no password, like http://192.168.1.14:8080/v1.";
+    if (message.includes("name must")) return "The name can be at most 60 characters.";
+    if (message.includes("model must")) return "The model name is too long.";
+    return plain(message);
+  }
+  function showAddRung(open) {
+    $("addRungForm").hidden = !open;
+    $("addRungBtn").setAttribute("aria-expanded", String(open));
+    showMsg($("arMsg"), "", "", "");
+    if (open) return $("arName").focus();
+    for (const id of ["arName", "arUrl", "arModel"]) $(id).value = "";
+    $("arPickWrap").hidden = true;
+    $("addRungBtn").focus();
+  }
+  async function findRungModels() {
+    const msg = $("arMsg"), btn = $("arFind"), address = $("arUrl").value.trim();
+    $("arPickWrap").hidden = true;
+    if (!address) return showMsg(msg, "error", "No address:", "type one like http://192.168.1.14:8080/v1");
+    btn.disabled = true; btn.textContent = "Looking…";
+    try {
+      const { servers } = await post("/api/detect", { address });
+      const models = servers.length ? servers[0].models : [];
+      if (!servers.length) showMsg(msg, "error", "Nothing answered:", "check the address and that the server is running. You can still type a model.");
+      else if (!models.length) showMsg(msg, "error", "No models listed:", "the server answered but reported none. You can still type a model.");
+      else {
+        $("arPick").replaceChildren(...models.map((m) => h("option", { value: m }, m)));
+        $("arPickWrap").hidden = false;
+        $("arModel").value = models[0];
+        showMsg(msg, "", "", "");
+      }
+    } catch (e) { showMsg(msg, "error", "Could not look:", rungProblem(e.message.includes("address") ? "base_url" : e.message)); }
+    btn.disabled = false; btn.textContent = "Find models";
+  }
+  async function submitAddRung() {
+    const msg = $("arMsg"), name = $("arName").value.trim(), address = $("arUrl").value.trim(), model = $("arModel").value.trim();
+    if (!name) return showMsg(msg, "error", "No name:", "give this rung a name, such as Office PC");
+    if (!address) return showMsg(msg, "error", "No address:", "type one like http://192.168.1.14:8080/v1");
+    if (!model) return showMsg(msg, "error", "No model:", "type a model name, or use Find models");
+    if (S.draft.length >= S.settings.max_tiers) return showMsg(msg, "error", "Not added:", `the ladder has at most ${S.settings.max_tiers} rungs`);
+    const tier = { id: uniqueId(name, S.draft), name, kind: "local", base_url: addressToBase(address), model, flags: {}, enabled: true };
+    try {
+      const { tier: clean } = await post("/api/settings/check", { tier });
+      showAddRung(false);
+      insertRung(clean);
+    } catch (e) { showMsg(msg, "error", "Not added:", rungProblem(e.message)); }
+  }
+  const foundKey = (baseUrl, model) => `${endpointKey(baseUrl)} ${model}`;
+  const inLadder = (key) => (S.draft || []).some((t) => t.kind === "local" && foundKey(t.base_url, t.model) === key);
+  function refreshAdded() {
+    document.querySelectorAll(".added").forEach((el) => { el.hidden = !inLadder(el.dataset.key); });
+  }
+  const KNOWN_KINDS = ["Ollama", "LM Studio", "llama.cpp"];
   function serverCard(server) {
     const models = server.models.length ? server.models : null;
     return h("div", { class: "server" },
-      h("div", { class: "server-head" }, server.kind, h("span", null, server.base_url)),
+      h("div", { class: "server-head" }, KNOWN_KINDS.includes(server.kind) ? server.kind : "Model server", h("span", null, server.base_url)),
       ...(models ? models.map((m) => h("div", { class: "model-row" }, h("code", null, m),
-            h("button", { class: "ghost-btn", type: "button", onclick: () => addRung(server, m) }, "Add as rung")))
+            h("div", { class: "model-acts" },
+              h("span", { class: "added", "data-key": foundKey(server.base_url, m), hidden: true }, icon("check"), "Added"),
+              h("button", { class: "ghost-btn", type: "button", onclick: () => addRung(server, m) }, "Add as rung"))))
           : [h("p", { class: "hint" }, "The server answered but reported no models.")]));
+  }
+  /* Detect and Probe are two lists on one card: a model already listed under Detect is left out of Probe's. */
+  function renderFound() {
+    const listed = new Set(S.found.detect.flatMap((s) => s.models.map((m) => foundKey(s.base_url, m))));
+    const probed = S.found.probe.map((s) => ({ ...s, models: s.models.filter((m) => !listed.has(foundKey(s.base_url, m))) }));
+    const fresh = probed.filter((s, i) => s.models.length || !S.found.probe[i].models.length);
+    if (S.found.detected) {
+      $("detectOut").replaceChildren(...(S.found.detect.length ? S.found.detect.map(serverCard)
+        : [h("p", { class: "hint" }, "Nothing answered on the usual ports. Start Ollama, LM Studio or llama-server and try again.")]));
+    }
+    if (S.found.probed) {
+      $("probeOut").replaceChildren(...(fresh.length ? fresh.map(serverCard)
+        : [h("p", { class: "hint" }, S.found.probe.length ? "Already listed under Detect local models." : "Nothing answered within 1 second. Check the IP, the port and that the server uses --host 0.0.0.0.")]));
+    }
+    refreshAdded();
   }
   async function detect() {
     const out = $("detectOut"), btn = $("detectBtn");
+    if (btn.disabled) return;  // a second press must not add a second copy of the list
     btn.disabled = true; btn.textContent = "Detecting…";
     out.replaceChildren();
     try {
-      const { servers } = await post("/api/detect", {});
-      out.append(...(servers.length ? servers.map(serverCard)
-        : [h("p", { class: "hint" }, "Nothing answered on the usual ports. Start Ollama, LM Studio or llama-server and try again.")]));
+      S.found.detect = (await post("/api/detect", {})).servers;
+      S.found.detected = true;
+      renderFound();
     } catch (e) { const m = h("div", { class: "msg" }); out.append(m); showMsg(m, "error", "Detection failed:", e.message); }
     btn.disabled = false; btn.textContent = "Detect local models";
   }
   async function probe() {
     const out = $("probeOut"), btn = $("probeBtn"), address = $("addrInput").value.trim();
+    if (btn.disabled) return;
     out.replaceChildren();
+    S.found.probed = false;
     if (!address) { const m = h("div", { class: "msg" }); out.append(m); return showMsg(m, "error", "No address:", "type one like http://192.168.1.14:8080/v1"); }
     btn.disabled = true; btn.textContent = "Probing…";
     try {
-      const { servers } = await post("/api/detect", { address });
-      out.append(...(servers.length ? servers.map(serverCard)
-        : [h("p", { class: "hint" }, "Nothing answered at that address within 1 second. Check the IP, the port and that the server listens on the network (--host 0.0.0.0).")]));
+      S.found.probe = (await post("/api/detect", { address })).servers;
+      S.found.probed = true;
+      renderFound();
     } catch (e) { const m = h("div", { class: "msg" }); out.append(m); showMsg(m, "error", "Could not probe:", e.message); }
     btn.disabled = false; btn.textContent = "Probe";
+  }
+  /* The colour popover of one rung, on the Models screen in Custom mode. An unsaved edit, like the rest of that list. */
+  // At least 3:1 on the card, and as far apart as a search could get them in normal, protan, deutan and tritan vision.
+  const SWATCHES = [["Charcoal", "#2B2B2B"], ["Maroon", "#7F0000"], ["Wine", "#882255"], ["Purple", "#6A3D9A"], ["Indigo", "#5D3FD3"], ["Brown", "#795548"],
+                    ["Teal", "#0F6E84"], ["Olive", "#6B6B00"], ["Magenta", "#C71585"], ["Lilac", "#9467BD"], ["Rose", "#CC6677"], ["Gold", "#B8860B"]];
+  let colorOpen = null;
+  function closeColor(refocus) {
+    if (!colorOpen) return;
+    const was = colorOpen;
+    colorOpen = null;
+    was.setAttribute("aria-expanded", "false");
+    $("colorPop").hidden = true;
+    if (refocus) was.focus();
+  }
+  function setRungColor(t, hex) {
+    if (hex === null) delete t.color; else t.color = hex.toUpperCase();
+    S.dirty = true;
+    closeColor();
+    renderRungList();
+    const again = document.querySelector(`.colorbtn[data-rung="${t.id}"]`);
+    if (again) again.focus();
+  }
+  function tryColor(t, hex, note) {
+    if (!validHex(hex)) return;
+    const ratio = contrastOnCard(hex);
+    if (ratio < 3) { note.textContent = `Too pale to see on the card (${ratio.toFixed(1)}:1, it needs at least 3:1). Pick a darker colour.`; return; }
+    setRungColor(t, hex);
+  }
+  function openColor(btn, t, current) {
+    closeInfo();
+    closeColor();
+    colorOpen = btn;
+    btn.setAttribute("aria-expanded", "true");
+    const pop = $("colorPop");
+    const note = h("p", { class: "color-note", role: "status" });
+    const other = h("input", { type: "color", value: current.toLowerCase(), "aria-label": `Other colour for ${t.name}` });
+    other.addEventListener("change", () => tryColor(t, other.value, note));
+    pop.replaceChildren(
+      h("div", { class: "swatches" }, ...SWATCHES.map(([name, hex]) => h("button", { class: "swatch", type: "button", style: `--c:${hex}`, title: name, "aria-label": name,
+        "aria-pressed": String(t.color === hex), onclick: () => tryColor(t, hex, note) }))),
+      h("div", { class: "color-more" },
+        h("button", { class: "ghost-btn", type: "button", onclick: () => setRungColor(t, null) }, "Reset"),
+        h("label", null, "Other", other)),
+      note);
+    pop.hidden = false;
+    placePop(pop, btn);
+    pop.querySelector(".swatch").focus();
   }
   /* The Key dropdown of a cloud rung. Names and providers only; a name with no key stays selected, marked as not set.
      onPick(name) saves the choice; by default it is an unsaved edit on the Models screen. */
@@ -1285,7 +1792,7 @@
     const auto = !names.length ? "No key yet" : metaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${metaKeys()[0]})` : "Choose a key";
     const sel = h("select", { "aria-label": `API key for ${t.name}` },
       h("option", { value: "" }, auto),
-      ...names.map((n) => h("option", { value: n }, `${n} (${providerOf(n)})`)),
+      ...names.map((n) => h("option", { value: n }, `${n} (${shownLabels(providerOf(n))})`)),
       t.key_name && !known ? h("option", { value: t.key_name }, `${t.key_name} (not set)`) : null);
     sel.value = known || t.key_name || "";
     const note = h("div", { class: "keynote" });
@@ -1309,7 +1816,7 @@
     const waiting = S.settings.tiers.filter((t) => t.kind === "cloud" && keyReason(t));
     list.hidden = !waiting.length;
     list.replaceChildren(...waiting.map((t) => h("li", null,
-      h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), h("b", null, t.name), keyReason(t)),
+      h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), h("b", null, t.name), shownLabels(keyReason(t))),
       keyWarning(t) ? keyWarnNote(keyWarning(t)) : null,
       S.settings.key_names.length ? keyPicker(t, (name) => pickRungKey(t, name)) : null)));
   }
@@ -1334,7 +1841,9 @@
   function renderRungList() {
     const list = $("rungList");
     if (!S.draft) return;
-    const colors = colorsFor(S.draft);
+    const colors = colorsFor(S.draft, S.colorMode);
+    $("colorDefault").checked = S.colorMode !== "custom";
+    $("colorCustom").checked = S.colorMode === "custom";
     list.replaceChildren();
     let pos = 0;
     S.draft.forEach((t, i) => {
@@ -1350,14 +1859,17 @@
       up.disabled = i === 0; down.disabled = i === S.draft.length - 1;
       const rm = h("button", { class: "icon-btn", type: "button", "aria-label": `Remove ${t.name}`, title: "Remove",
                                onclick: () => { S.draft.splice(i, 1); change(); } }, icon("trash"));
-      const where = t.kind === "cloud" ? (t.provider === "meta" ? "cloud · Meta (tested)" : "cloud · OpenAI-compatible (untested)") : "local";
+      const where = t.kind === "cloud" ? `cloud · ${PROVIDER_NAMES[cardFor(t)]}` : "local";
+      const swatch = S.colorMode !== "custom" ? null : h("button", { class: "colorbtn", type: "button", "data-rung": t.id, "aria-label": `Colour of ${t.name}`, "aria-haspopup": "dialog", "aria-expanded": "false", style: `--c:${colors[t.id]}`,
+        onclick: (e) => { if (colorOpen === e.currentTarget) closeColor(); else openColor(e.currentTarget, t, colors[t.id]); } }, h("i", { "aria-hidden": "true" }));
       list.append(h("li", { class: "rung-row" + (t.enabled ? "" : " off"), style: `--c:${colors[t.id]}` },
         h("span", { class: "pos" }, t.enabled ? `Rung ${++pos}` : "Off"),
         nameInput, h("div", { class: "meta" }, `${where} · ${hwLine(t)}`, t.kind === "cloud" ? keyPicker(t) : null),
-        h("div", { class: "acts" }, sw, up, down, rm)));
+        h("div", { class: "acts" }, swatch, sw, up, down, rm)));
     });
     if (!S.draft.length) list.append(h("li", { class: "empty-ladder" }, "No rungs. Detect a model or add a machine by address."));
     dirtyFlag();
+    refreshAdded();
   }
   function dirtyFlag() {
     const f = $("dirtyFlag");
@@ -1368,7 +1880,7 @@
     const msg = $("ladderMsg"), btn = $("saveLadder");
     btn.disabled = true;
     try {
-      const view = await post("/api/settings", { tiers: S.draft });
+      const view = await post("/api/settings", { tiers: S.draft, color_mode: S.colorMode });
       S.dirty = false;
       applySettings(view);
       showMsg(msg, "ok", "Saved.", "The Run screen now uses this ladder.");
@@ -1380,92 +1892,101 @@
   /* ---------- Cloud and Budget screen ---------- */
   function cloudTier(tiers) { return tiers.find((t) => t.kind === "cloud") || null; }
   // Base URLs and models from each provider's own documentation. No prices: they change, so people check them.
+  const PROVIDER_NAMES = { meta: "Meta", openai: "OpenAI", claude: "Claude", gemini: "Gemini", custom: "Custom" };
   const PRESETS = {
     openai: {
       name: "OpenAI",
       base_url: "https://api.openai.com/v1",
       model: "gpt-6.1-terra",
       key_name: "OpenAI key",
-      flags: {"max_tokens_field": "max_completion_tokens", "omit_temperature": true},
-      note: "Untested. OpenAI recommends its Responses API for new projects; this app uses Chat Completions."
+      flags: {"max_tokens_field": "max_completion_tokens", "omit_temperature": true}
     },
     claude: {
       name: "Claude (Anthropic)",
       base_url: "https://api.anthropic.com/v1",
       model: "claude-sonnet-5-5",
       key_name: "Claude key",
-      flags: {"omit_temperature": true},
-      note: "Untested. Anthropic describes this compatibility layer as meant for testing and comparing models, not long-term production use."
+      flags: {"omit_temperature": true}
     },
     gemini: {
       name: "Gemini (Google)",
       base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
       model: "gemini-3.8-flash",
       key_name: "Gemini key",
-      flags: {},
-      note: "Untested. Google says its support for the OpenAI libraries is still in beta."
+      flags: {}
     }
   };
-  function showPreset(id) {
-    document.querySelectorAll("[data-preset]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.preset === id)));
-    const note = $("presetNote");
-    note.hidden = !id;
-    note.textContent = id ? PRESETS[id].note : "";
+  function cardFor(t) {
+    if (!t || t.provider === "meta") return "meta";
+    return Object.keys(PRESETS).find((id) => PRESETS[id].base_url === t.base_url) || "custom";
+  }
+  const currentCard = () => (document.querySelector('input[name="prov"]:checked') || { value: "meta" }).value;
+  function showCard(card) {
+    document.querySelectorAll('input[name="prov"]').forEach((r) => { r.checked = r.value === card; });
+    $("metaFields").hidden = card !== "meta";
+    $("oaiFields").hidden = card === "meta";
+    $("presetHead").hidden = !PRESETS[card];
+    $("customHead").hidden = card !== "custom";
+    $("presetTitle").textContent = PRESETS[card] ? `${PROVIDER_NAMES[card]} settings` : "";
+  }
+  // The stored key label for a provider card: Add a key always follows the card that was chosen.
+  function keyLabelFor(card) {
+    return card === "meta" ? "Meta" : card === "custom" ? "Other" : PRESETS[card].name;
+  }
+  function syncKeyForm(card) {
+    $("keyProvider").value = keyLabelFor(card);
+    // A suggestion only; the key itself is still typed there, and a name the person typed stays.
+    const typed = $("keyName").value.trim();
+    if (!typed || Object.values(PRESETS).some((x) => x.key_name === typed)) $("keyName").value = PRESETS[card] ? PRESETS[card].key_name : "";
+  }
+  function chooseCard(card) {
+    S.picked = card;  // chosen but not saved yet: fillCloudForm leaves the form alone until it is
+    showCard(card);
+    syncKeyForm(card);
+    if (PRESETS[card]) return fillPreset(card);
+    showMsg($("cloudMsg"), "", "", "");
+    if (card === "custom") {
+      for (const id of ["oaiUrl", "oaiModel", "oaiIn", "oaiOut"]) $(id).value = "";
+      $("oaiIn").placeholder = "1.25";
+      $("oaiOut").placeholder = "4.25";
+    }
   }
   function fillPreset(id) {
     const p = PRESETS[id];
-    S.preset = id;  // filled in but not saved yet: fillCloudForm leaves the form alone until it is
-    showPreset(id);
     $("oaiUrl").value = p.base_url;
     $("oaiModel").value = p.model;
     $("oaiIn").value = "";
     $("oaiOut").value = "";
     $("oaiIn").placeholder = "";
     $("oaiOut").placeholder = "";
-    // A suggestion for the Add a key form; the key itself is still typed there.
-    const typed = $("keyName").value.trim();
-    if (!typed || Object.values(PRESETS).some((x) => x.key_name === typed)) $("keyName").value = p.key_name;
-    $("keyProvider").value = p.name;  // each preset's name is its provider label
-    showMsg($("cloudMsg"), "ok", `${p.name} filled in.`, "Add the prices from the provider's pricing page, save, then add a key with the name suggested below.");
-  }
-  function setProvider(p) {
-    $("provMeta").checked = p === "meta";
-    $("provOai").checked = p === "openai_compatible";
-    $("metaFields").hidden = p !== "meta";
-    $("oaiFields").hidden = p !== "openai_compatible";
-    if (p === "meta") {
-      if (S.preset) $("keyProvider").value = "Meta";
-      S.preset = null;
-      showPreset(null);
-    }
+    showMsg($("cloudMsg"), "ok", `${PROVIDER_NAMES[id]} filled in.`, "Add the prices, save, then add a key.");
   }
   function fillCloudForm() {
     renderRungWaits();
     const t = cloudTier(S.settings.tiers);
-    const meta = cloudTier(S.settings.defaults) || {};
-    $("metaInfo").textContent = `${host(meta.base_url || "")} · ${meta.model || ""}`;
-    if (!S.preset) {
-      setProvider(t ? t.provider : "meta");
+    if (!S.picked) {
+      showCard(cardFor(t));
+      if (!$("keyName").value.trim()) $("keyProvider").value = keyLabelFor(cardFor(t));
       $("effort").value = (t && t.provider === "meta" && t.flags.effort) || "minimal";
       if (t && t.provider === "openai_compatible") {
         $("oaiUrl").value = t.base_url; $("oaiModel").value = t.model;
         $("oaiIn").value = t.price_in_per_m; $("oaiOut").value = t.price_out_per_m;
-        showPreset(Object.keys(PRESETS).find((id) => PRESETS[id].base_url === t.base_url) || null);
       }
     }
-    $("cloudTierNote").textContent = !t ? "There is no cloud rung yet. Saving adds one at the end of the ladder."
-      : !t.enabled ? "The cloud rung is turned off on the Models screen." : "";
-    $("cloudLead").textContent = "The cloud rung is the last resort: it runs only when every local rung has failed the tests."
-      + (S.cloudAllowed ? "" : desktop() ? " Cloud calls are off until a key is stored on this computer."
-                                         : " Cloud calls are disabled on this server; start it with ALLOW_CLOUD=1 to allow them.");
+    $("cloudTierNote").textContent = !t ? "No cloud rung yet. Saving adds one at the end of the ladder."
+      : !t.enabled ? "The cloud rung is off on the Models screen." : "";
+    $("cloudLead").hidden = S.cloudAllowed;
+    $("cloudLead").textContent = S.cloudAllowed ? "" : desktop() ? "Cloud calls are off until a key is stored on this computer."
+      : "Cloud calls are off on this server. Start it with ALLOW_CLOUD=1 to allow them.";
   }
   async function saveCloud(asNew) {
     const msg = $("cloudMsg");
     const tiers = clone(S.settings.tiers);
     const i = asNew ? -1 : tiers.findIndex((t) => t.kind === "cloud");
     const prev = i >= 0 ? tiers[i] : null;
-    const preset = S.preset ? PRESETS[S.preset] : null;
-    const prov = $("provOai").checked ? "openai_compatible" : "meta";
+    const preset = PRESETS[S.picked] || null;
+    const fresh = S.picked === "custom";  // not the saved rung's name or flags: those belong to its old service
+    const prov = currentCard() === "meta" ? "meta" : "openai_compatible";
     let tier;
     if (prov === "meta") {
       const meta = cloudTier(S.settings.defaults);
@@ -1478,8 +1999,8 @@
       const missing = [["oaiUrl", "base URL"], ["oaiModel", "model"], ["oaiIn", "input price"], ["oaiOut", "output price"]]
         .filter(([id]) => !$(id).value.trim()).map(([, label]) => label);
       if (missing.length) return showMsg(msg, "error", "Not saved:", `please fill in the ${missing.join(", ")}`);
-      const keep = prev && prev.provider === "openai_compatible";
-      const name = preset ? preset.name : keep ? prev.name : "OpenAI-compatible cloud";
+      const keep = prev && prev.provider === "openai_compatible" && !fresh;
+      const name = preset ? PROVIDER_NAMES[S.picked] : keep ? prev.name : "Custom cloud";
       tier = { id: prev ? prev.id : uniqueId(name, tiers), name, kind: "cloud",
                provider: "openai_compatible", base_url: $("oaiUrl").value.trim(), model: $("oaiModel").value.trim(),
                flags: preset ? clone(preset.flags) : keep ? clone(prev.flags) : {},
@@ -1489,17 +2010,18 @@
     // pick up the only key there is, which belongs to some other provider, and send it there.
     if (prov !== "meta" && preset) tier.key_name = preset.key_name;
     else if (prev && prev.key_name && host(prev.base_url) === host(tier.base_url)) tier.key_name = prev.key_name;
+    if (prev && prev.color) tier.color = prev.color;
     if (i >= 0) tiers[i] = tier; else tiers.push(tier);
     try {
       const view = await post("/api/settings", { tiers });
-      S.preset = null;
+      S.picked = null;
       if (S.dirty) {  // keep unsaved Models edits, with the new cloud rung in them
         const j = S.draft.findIndex((t) => t.id === tier.id);
         if (j >= 0) S.draft[j] = clone(tier); else S.draft.push(clone(tier));
       }
       applySettings(view);
       showMsg(msg, "ok", asNew ? "Added as a new rung." : "Saved.", prov === "meta" ? `Meta Muse Spark at ${tier.flags.effort} effort.`
-        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}. ${keyWarning(tier)}`.trim() : `${tier.name} (untested). It waits until you choose a key for it.`);
+        : tier.key_name ? `${tier.name} uses the key named ${tier.key_name}. ${keyWarning(tier)}`.trim() : `${tier.name} waits until you choose a key for it.`);
     } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
   const REMOVE_WARNING = "Remove this key from the app? This does not cancel it at the provider; to revoke it, do that on the provider's site.";
@@ -1519,7 +2041,7 @@
           h("span", { class: "keystate set" }, icon("key"), h("span", null, "Key set")),
           h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${k.name}`, "aria-expanded": String(asking),
                         onclick: () => { S.confirmKey = asking ? null : k.name; renderKeys(); } }, "Remove")),
-        h("p", { class: "hint" }, `Provider: ${k.provider}`),
+        h("p", { class: "hint" }, `Provider: ${shownLabels(k.provider)}`),
         h("p", { class: "hint" }, uses),
         h("p", { class: "hint" }, S.storedKeys.has(nameKey(k.name)) ? "Stored encrypted on this computer" : "Held in memory for this session only"),
         asking ? h("div", { class: "keyconfirm" },
@@ -1549,12 +2071,12 @@
     const problem = keyLabelProblem(key, provider);
     if (problem) {
       key = "";
-      return showMsg(msg, "error", "Key not saved:", `${problem} Then paste the key again.`);
+      return showMsg(msg, "error", "Key not saved:", shownLabels(`${problem} Then paste the key again.`));
     }
     try {
       const r = await post("/api/key", { name, key, provider });
       nameInput.value = "";
-      $("keyProvider").value = "Meta";
+      $("keyProvider").value = keyLabelFor(currentCard());
       const d = desktop();
       if (d && typeof d.saveKey === "function") {
         let res = null;
@@ -1575,7 +2097,7 @@
       }
       showKeys(r.keys);
       await loadSettings();
-    } catch (e) { showMsg(msg, "error", "Key not saved:", e.message); }
+    } catch (e) { showMsg(msg, "error", "Key not saved:", shownLabels(e.message)); }
     key = "";
   }
   async function removeKey(k) {
@@ -1674,25 +2196,37 @@
   $("share").addEventListener("input", updateCalc);
   $("tabBench").addEventListener("click", () => setMode("bench"));
   $("tabCustom").addEventListener("click", () => setMode("custom"));
-  $("cPrompt").addEventListener("input", counts);
-  $("cTests").addEventListener("input", counts);
-  $("cExample").addEventListener("click", fillExample);
+  $("cPrompt").addEventListener("input", () => { fieldError("cPrompt", ""); counts(); codeTaskChanged(); });
+  $("cEntry").addEventListener("input", () => { fieldError("cEntry", ""); codeTaskChanged(); });
+  $("cTests").addEventListener("input", () => { fieldError("cTests", ""); counts(); codeTaskChanged(); });
+  $("cAddRow").addEventListener("click", addCheck);
+  $("cCodeSwitch").addEventListener("click", toggleCodeMode);
+  $("copyAnswer").addEventListener("click", copyAnswer);
+  document.querySelectorAll("[data-example]").forEach((b) => b.addEventListener("click", () => fillExample(b.dataset.example)));
   $("welcomeClose").addEventListener("click", () => { S.welcomeDismissed = true; $("welcome").hidden = true; });
   $("welcomeDetect").addEventListener("click", () => setTimeout(detect, 0));
   $("detectBtn").addEventListener("click", detect);
   $("probeBtn").addEventListener("click", probe);
   $("addrInput").addEventListener("keydown", (e) => { if (e.key === "Enter") probe(); });
   $("saveLadder").addEventListener("click", saveLadder);
-  $("provMeta").addEventListener("change", () => setProvider("meta"));
-  $("provOai").addEventListener("change", () => setProvider("openai_compatible"));
+  document.querySelectorAll('input[name="colorMode"]').forEach((r) => r.addEventListener("change", () => { closeColor(); S.colorMode = r.value; S.dirty = true; renderRungList(); }));
+  $("addRungBtn").addEventListener("click", () => showAddRung($("addRungForm").hidden));
+  $("arCancel").addEventListener("click", () => showAddRung(false));
+  $("arFind").addEventListener("click", findRungModels);
+  $("arAdd").addEventListener("click", submitAddRung);
+  $("arPick").addEventListener("change", () => { $("arModel").value = $("arPick").value; });
+  document.addEventListener("click", (e) => {
+    if (colorOpen && !e.target.closest(".colorbtn") && !$("colorPop").contains(e.target)) closeColor();
+  });
+  document.querySelectorAll('input[name="prov"]').forEach((r) => r.addEventListener("change", () => chooseCard(r.value)));
   $("saveCloud").addEventListener("click", () => saveCloud(false));
   $("addCloud").addEventListener("click", () => saveCloud(true));
-  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => fillPreset(b.dataset.preset)));
   $("saveKey").addEventListener("click", saveKey);
   $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveKey(); });
   $("saveBudget").addEventListener("click", saveBudget);
 
   showScreen();
+  renderChecks();
   counts();
   Promise.all([loadConfig(), loadMemory()]).then(loadSettings).then(() => { setEco(true); loadBudget(); loadStats(); });
   loadTasks();

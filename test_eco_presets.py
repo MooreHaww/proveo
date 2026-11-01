@@ -184,8 +184,118 @@ class CutOffAnswers(unittest.TestCase):
         self.assertIn("tests passed", result["attempts"][0]["first_failure"])
 
 
+def page_examples():
+    """The page's EXAMPLES block, read the same way as the presets."""
+    with open(PAGE, encoding="utf-8") as f:
+        block = re.search(r"const EXAMPLES = (\{.*?\n  \});", f.read(), re.S).group(1)
+    return json.loads(re.sub(r"^(\s*)([a-zA-Z_]+):", r'\1"\2":', block, flags=re.M))
+
+
+EXAMPLE_ANSWERS = {
+    "palindrome": ("def is_palindrome(s):\n    t = [c.lower() for c in s if c.isalnum()]\n    return t == t[::-1]\n",
+                   "def is_palindrome(s):\n    return s == s[::-1]\n"),
+    "fizzbuzz": ("def fizzbuzz(n):\n    out = []\n    for i in range(1, n + 1):\n"
+                 "        out.append('Fizz' * (i % 3 == 0) + 'Buzz' * (i % 5 == 0) or str(i))\n    return out\n",
+                 "def fizzbuzz(n):\n    return [str(i) for i in range(1, n + 1)]\n"),
+    "merge": ("def merge_intervals(intervals):\n    out = []\n    for a, b in sorted(intervals):\n"
+              "        if out and a <= out[-1][1]:\n            out[-1][1] = max(out[-1][1], b)\n"
+              "        else:\n            out.append([a, b])\n    return out\n",
+              "def merge_intervals(intervals):\n    return intervals\n"),
+}
+
+
+class CodeTaskExamples(unittest.TestCase):
+    """Each 'Try an example' is complete: the backend accepts it, and the real checker tells right from wrong."""
+
+    def setUp(self):
+        self.examples = page_examples()
+
+    def task(self, example):
+        # The same text the page sends: see codeTaskPrompt and checksToCode (pinned by a Node test).
+        tests = "\n".join(f"assert {call} == {want}" for call, want in example["checks"])
+        return eco_core.make_custom_task(f"Write a Python function named {example['entry']}. {example['prompt']}", example["entry"], tests)
+
+    def test_the_three_examples(self):
+        self.assertEqual(set(self.examples), set(EXAMPLE_ANSWERS))
+
+    def test_a_correct_solution_passes_and_a_wrong_one_fails_in_the_real_checker(self):
+        for name, example in self.examples.items():
+            task = self.task(example)
+            self.assertIn(f"named {example['entry']}.", task["prompt"], name)
+            right, wrong = EXAMPLE_ANSWERS[name]
+            result = bench_coding.run_custom_tests(right, task["tests_code"])
+            self.assertTrue(result["passed"], f"{name}: {result}")
+            self.assertFalse(bench_coding.run_custom_tests(wrong, task["tests_code"])["passed"], name)
+
+
+class PageCopy(unittest.TestCase):
+    """The page stays short: explanations live behind info buttons, and the honest ones stay reachable."""
+
+    def setUp(self):
+        with open(PAGE, encoding="utf-8") as f:
+            self.page = f.read()
+        self.info = re.search(r"const INFO = \{(.*?)\n  \};", self.page, re.S).group(1)
+
+    def test_no_eyebrows_badges_or_old_wording(self):
+        lower = self.page.lower()
+        for gone in ("rung 0", "budget this month", "your own task", "untested", "(tested)", "<footer", "side-foot", "—"):
+            self.assertNotIn(gone, lower)
+        self.assertEqual(re.findall(r"text-transform: uppercase[^}]*", self.page.split(".metrics div")[0]), [], "only metrics and status tags")
+        self.assertIn(">Code task</button>", self.page)
+
+    def test_every_info_button_has_text_and_the_required_ones_exist(self):
+        used = set(re.findall(r'data-info="([a-z]+)"', self.page))
+        defined = set(re.findall(r"^\s*([a-z]+): \[", self.info, re.M))
+        self.assertEqual(used, defined)
+        self.assertLessEqual({"ladder", "memory", "check", "avoided", "measured", "budget", "keys", "provider"}, used)
+
+    def test_the_lines_that_must_stay_honest(self):
+        self.assertIn("It runs in a subprocess with a time limit. It is not a sandbox.", self.info)
+        self.assertIn("Only Meta Muse Spark has been tested in this app.", self.info)
+        self.assertIn("not your provider's account", self.info)
+
+    def test_the_name_is_proveo_and_eco_mode_is_only_the_switch(self):
+        self.assertIn("<title>Proveo</title>", self.page)
+        self.assertIn('<span class="logo-name">Proveo</span>', self.page)
+        self.assertIn("<h1>Proveo</h1>", self.page)
+        self.assertIn('<h2 class="title">Proveo</h2>', self.page)
+        self.assertIn('<p class="pitch">Let your tests choose the model. Cheapest first.</p>', self.page)
+        self.assertEqual(self.page.count("pi-edge-router"), 1, "only in the repository link")
+        html =self.page.split("<script>")[0]
+        labels = re.findall(r">[^<]*Eco mode[^<]*<|aria-label=\"Eco mode\"", html)
+        self.assertEqual(labels, ['aria-label="Eco mode"', ">Eco mode<"])
+
+    def test_the_about_version_matches_the_app(self):
+        with open(os.path.join(os.path.dirname(PAGE), "..", "desktop", "package.json"), encoding="utf-8") as f:
+            self.assertIn(f"Version {json.load(f)['version']}<", self.page)
+
+    def about(self):
+        return self.page.split('id="screen-about"')[1].split("</main>")[0]
+
+    def test_the_about_page_has_its_sections_in_order(self):
+        self.assertEqual(re.findall(r"<h2>(.*?)</h2>", self.about()),
+                         ["What it is", "How it works", "What it works for", "Honest limits", "Your keys and your data", "Version"])
+
+    def test_the_about_page_keeps_the_honest_limits(self):
+        about = self.about()
+        for line in ("small benchmark coding tasks, one run each", "The Pi's answers vary between runs", "It is not a real sandbox",
+                     "Weak tests let a wrong answer pass", "Savings figures are estimates unless marked as measured",
+                     "encrypted on this computer", "held in memory only", "It does not keep your description, your checks or the answers", "not see your provider's account"):
+            self.assertIn(line, about)
+
+    def test_the_about_page_has_no_provider_status(self):
+        lower = self.about().lower()
+        for word in ("untested", "has been tested", "muse spark", "openai", "anthropic", "gemini"):
+            self.assertNotIn(word, lower)
+
+    def test_the_about_repository_link_matches_the_readme(self):
+        link = re.search(r'href="(https://github\.com/[^"]+)" target="_blank" rel="noopener"', self.about()).group(1)
+        with open(os.path.join(os.path.dirname(PAGE), "..", "README.md"), encoding="utf-8") as f:
+            self.assertIn(link + "/", f.read())
+
+
 class PagePresets(unittest.TestCase):
-    """The presets are data in the page: no prices, labelled untested, and valid for the backend."""
+    """The presets are data in the page: no prices, and valid for the backend."""
 
     def setUp(self):
         with open(PAGE, encoding="utf-8") as f:
@@ -197,13 +307,11 @@ class PagePresets(unittest.TestCase):
                          {"openai": "https://api.openai.com/v1", "claude": "https://api.anthropic.com/v1",
                           "gemini": "https://generativelanguage.googleapis.com/v1beta/openai"})
 
-    def test_no_prices_and_every_preset_is_untested_with_a_note(self):
+    def test_no_prices_and_every_preset_suggests_a_key_name(self):
         for name, p in self.presets.items():
             self.assertFalse({"price_in_per_m", "price_out_per_m"} & set(p), name)
-            self.assertTrue(p["note"], name)
             self.assertTrue(p["key_name"].endswith("key"), name)
-        self.assertIn("testing and comparing", self.presets["claude"]["note"])
-        self.assertIn("Check the provider's pricing page", self.page)
+        self.assertIn("see the provider's pricing page", self.page)
 
     def test_each_preset_saves_as_a_valid_rung_with_its_flags(self):
         for name, p in self.presets.items():
@@ -219,7 +327,7 @@ class PagePresets(unittest.TestCase):
 
     def test_the_provider_labels_are_the_same_everywhere(self):
         select = re.search(r'<select id="keyProvider">(.*?)</select>', self.page).group(1)
-        self.assertEqual(tuple(re.findall(r"<option>(.*?)</option>", select)), eco_core.KEY_PROVIDERS)
+        self.assertEqual(tuple(re.findall(r'<option value="(.*?)">', select)), eco_core.KEY_PROVIDERS)
         self.assertEqual(eco_core.KEY_PROVIDERS[0], "Meta", "the form's default")
         with open(os.path.join(os.path.dirname(PAGE), "..", "desktop", "lib.js"), encoding="utf-8") as f:
             line = re.search(r"const KEY_PROVIDERS = \[(.*?)\];", f.read()).group(1)
@@ -237,7 +345,8 @@ class PagePresets(unittest.TestCase):
     def test_each_preset_button_preselects_its_own_provider(self):
         for preset in self.presets.values():
             self.assertIn(preset["name"], eco_core.KEY_PROVIDERS)
-        self.assertIn('$("keyProvider").value = p.name;', self.page)
+        self.assertIn('$("keyProvider").value = keyLabelFor(card);', self.page)
+        self.assertIn('card === "custom" ? "Other" : PRESETS[card].name;', self.page)
 
     def test_flags_match_what_the_docs_say(self):
         self.assertTrue(self.presets["claude"]["flags"]["omit_temperature"], "Claude refuses temperature below 1")

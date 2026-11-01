@@ -178,14 +178,27 @@ class EcoApp:
                 "saved": os.path.exists(settings.settings_path()), "defaults": settings.default_settings()["tiers"]}
 
     def save_settings(self, req):
-        if not isinstance(req, dict) or set(req) - {"tiers", "budget"}:
-            raise ValueError("send only tiers and/or budget (the API key is set with POST /api/key)")
+        if not isinstance(req, dict) or set(req) - {"tiers", "budget", "color_mode"}:
+            raise ValueError("send only tiers, budget and/or color_mode (the API key is set with POST /api/key)")
         current = settings.load() if not {"tiers", "budget"} <= set(req) else {}
         new = {"tiers": req.get("tiers", current.get("tiers")), "budget": req.get("budget", current.get("budget"))}
+        if "color_mode" in req or current:
+            new["color_mode"] = req.get("color_mode", current.get("color_mode"))
+        elif os.path.exists(settings.settings_path()):
+            try:  # a full save keeps the mode, and can still replace a file that no longer loads
+                new["color_mode"] = settings.load()["color_mode"]
+            except (ValueError, OSError):
+                pass
         if "tiers" in req:
             self._refuse_wrong_provider(settings.validate(new)["tiers"])
         settings.save(new, secrets=self.secrets())
         return self.settings_view()
+
+    def check_rung(self, req):
+        """The settings rules for one new rung, without saving anything. Returns it cleaned."""
+        if not isinstance(req, dict) or set(req) != {"tier"}:
+            raise ValueError("send only tier")
+        return {"tier": settings.validate({"tiers": [req["tier"]]})["tiers"][0]}
 
     def _refuse_wrong_provider(self, tiers):
         """A rung on the Meta host can't be paired with a stored key for anyone else, even a disabled one."""
@@ -292,12 +305,18 @@ class EcoApp:
                 job["attempts"].append(dict(attempt))
                 job["current"] = None
 
+        def on_answer(tier, code, passed, first_failure):
+            # Held in this job only, and sent through _send's key scrub. Never logged.
+            with self.lock:
+                job["answer"] = {"tier": tier, "code": code, "passed": passed, "first_failure": first_failure}
+
         try:
             result = eco_core.solve(task["prompt"], task.get("tests"), task["entry"], tiers,
                                     task_id=task["id"], log_path=self.log_path,
                                     allow_cloud=self.allow_cloud, on_start=on_start, on_attempt=on_attempt,
                                     memory_path=memory_path, cloud_check=self.cloud_reason,
-                                    secrets=self.secrets(), tests_code=task.get("tests_code"))
+                                    secrets=self.secrets(), tests_code=task.get("tests_code"),
+                                    on_answer=on_answer if job["custom"] else None)
             message = ""
             if result["skipped"]:
                 message = CLOUD_DISABLED if not self.allow_cloud else result.get("skip_reason", "")
@@ -473,7 +492,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             self._drain()
             return self._json({"error": "send JSON"}, 415)
-        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/detect", "/api/key", "/api/key/remove"}
+        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/settings/check", "/api/detect", "/api/key", "/api/key/remove"}
         if self.path not in routes:
             return self._json({"error": "not found"}, 404)
         try:
@@ -484,6 +503,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.clear_memory())
             if self.path == "/api/settings":
                 return self._json(self.app.save_settings(req))
+            if self.path == "/api/settings/check":
+                return self._json(self.app.check_rung(req))
             if self.path == "/api/detect":
                 return self._json(self.app.detect(req.get("address")))
             if self.path == "/api/key":
@@ -545,7 +566,7 @@ def make_server(app, port=DEFAULT_PORT):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Eco mode demo server (127.0.0.1 only)")
+    parser = argparse.ArgumentParser(description="Proveo local server (127.0.0.1 only)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--log", help=f"spend log file (default: {eco_core.LOG_PATH})")
     parser.add_argument("--memory", help=f"verified memory file (default: {eco_core.MEMORY_PATH})")
@@ -559,7 +580,7 @@ def main():
     except OSError as e:
         raise SystemExit(f"Port {args.port} is already in use ({e.strerror}). Is another eco_server.py "
                          f"running? Stop it, or start this one with --port <other port>.")
-    print(f"Eco mode demo: http://127.0.0.1:{args.port}   cloud: "
+    print(f"Proveo: http://127.0.0.1:{args.port}   cloud: "
           f"{'enabled (minimal effort)' if app.allow_cloud else 'disabled (set ALLOW_CLOUD=1 before starting)'}",
           flush=True)
     print(f"Settings: {settings.settings_path()}"

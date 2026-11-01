@@ -20,6 +20,7 @@ KNOWN_SERVERS = [
 TIMEOUT = 1.0
 MAX_BYTES = 1_000_000
 MAX_MODELS = 200
+SAME_MACHINE = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # all mean this computer
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -51,6 +52,34 @@ def _models(data, path):
     return [n[:200] for n in names if isinstance(n, str) and n][:MAX_MODELS]
 
 
+def endpoint_key(base_url):
+    """One spelling per endpoint: this computer's names are one host, and /v1 and the default port are implied.
+    web/index.html has the same rule (endpointKey)."""
+    parts = urlsplit(base_url.strip())
+    try:
+        port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+    except ValueError:
+        return base_url.strip()
+    host = (parts.hostname or "").rstrip(".").lower()
+    return f"{parts.scheme}://{'localhost' if host in SAME_MACHINE else host}:{port}{parts.path.rstrip('/') or '/v1'}"
+
+
+def dedupe_servers(servers):
+    """Each model once per endpoint, keeping the first. The same model on another endpoint stays: that is another server."""
+    seen, kept = set(), []
+    for server in servers:
+        endpoint = endpoint_key(server["base_url"])
+        models = []
+        for m in server["models"]:
+            if (endpoint, m) not in seen:
+                seen.add((endpoint, m))
+                models.append(m)
+        if models or (endpoint, None) not in seen:
+            kept.append({**server, "models": models})
+        seen.add((endpoint, None))
+    return kept
+
+
 def detect_local(host="127.0.0.1", timeout=TIMEOUT, servers=KNOWN_SERVERS):
     """Servers that answered: [{kind, port, base_url, models}]. Closed ports are skipped."""
     found = []
@@ -59,7 +88,7 @@ def detect_local(host="127.0.0.1", timeout=TIMEOUT, servers=KNOWN_SERVERS):
         if models is not None:
             found.append({"kind": kind, "port": port, "base_url": f"http://{host}:{port}/v1",
                           "models": models})
-    return found
+    return dedupe_servers(found)
 
 
 def normalize_address(address):
@@ -83,5 +112,5 @@ def probe_address(address, timeout=TIMEOUT):
     for kind, path in (("Ollama", "/api/tags"), ("OpenAI-compatible", "/v1/models")):
         models = _models(_get_json(root + path, timeout), path)
         if models is not None:
-            return {"kind": kind, "address": root, "base_url": root + "/v1", "models": models}
+            return dedupe_servers([{"kind": kind, "address": root, "base_url": root + "/v1", "models": models}])[0]
     return None

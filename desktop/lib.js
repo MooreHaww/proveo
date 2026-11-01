@@ -5,6 +5,7 @@ const fs = require("fs");
 const net = require("net");
 const path = require("path");
 
+const PROFILE_NAME = "Proveo", OLD_PROFILE_NAME = "Eco";
 const KEY_FILE = "model-key.enc";  // encrypted bytes from safeStorage, never plaintext
 const KEY_MIN = 8;                 // same limits as eco_server.valid_key
 const KEY_MAX = 512;
@@ -32,7 +33,7 @@ const BACKEND_BOOT =
 
 /** The bundled backend inside an installed app: see eco_backend.py and build_backend.py. */
 function bundledBackend(resourcesPath) {
-  return path.join(resourcesPath, "backend", "eco-backend.exe");
+  return path.join(resourcesPath, "backend", "proveo-backend.exe");
 }
 
 /** The server's options: the spend log and verified memory live with the app's data, not in results/. */
@@ -61,6 +62,22 @@ function pythonCandidates(repoRoot, platform = process.platform, exists = fs.exi
     : path.join(repoRoot, ".venv", "bin", "python");
   const onPath = platform === "win32" ? "python" : "python3";
   return exists(venv) ? [venv, onPath] : [onPath];
+}
+
+/* The one-time move from the old profile folder to the new one. It moves the whole folder: the encrypted key file
+   only decrypts next to Chromium's Local State, which holds its key. Only a folder named Proveo takes over a sibling
+   named Eco, and only if Proveo does not exist yet. Returns the folder to use: the old one if the move failed
+   (it is locked while the old app runs), so nothing looks lost and the next start tries again. */
+function migrateProfile(profile, rename = fs.renameSync) {
+  if (path.basename(profile) !== PROFILE_NAME) return profile;
+  const old = path.join(path.dirname(profile), OLD_PROFILE_NAME);
+  if (fs.existsSync(profile) || !fs.existsSync(old) || !fs.statSync(old).isDirectory()) return profile;
+  try {
+    rename(old, profile);
+    return profile;
+  } catch (e) {
+    return old;
+  }
 }
 
 function dataDir(userData) {
@@ -228,7 +245,7 @@ function cleanText(value, max) {
 function notification(title, body) {
   const t = cleanText(title, NOTIFY_TITLE_MAX);
   const b = cleanText(body, NOTIFY_BODY_MAX);
-  return t || b ? { title: t || "Eco mode", body: b } : null;
+  return t || b ? { title: t || "Proveo", body: b } : null;
 }
 
 /** Where a navigation or new-window request may go. */
@@ -248,13 +265,13 @@ function escapeHtml(text) {
 function statusPage(title, detail) {
   return "<!doctype html><html><head><meta charset='utf-8'>" +
     "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'\">" +
-    "<title>Eco mode</title><style>body{font:18px/1.5 system-ui,sans-serif;margin:48px;color:#1d1d1b;background:#f7f6f1}" +
+    "<title>Proveo</title><style>body{font:18px/1.5 system-ui,sans-serif;margin:48px;color:#1d1d1b;background:#f7f6f1}" +
     "h1{font-size:28px}pre{white-space:pre-wrap;background:#fff;border:1px solid #ccc;padding:16px;border-radius:8px;font-size:14px}</style>" +
     `</head><body><h1>${escapeHtml(title)}</h1>` + (detail ? `<pre>${escapeHtml(detail)}</pre>` : "") + "</body></html>";
 }
 
 module.exports = {
-  BACKEND_BOOT, KEY_FILE, KEY_PROVIDERS, NOTIFY_TITLE_MAX, NOTIFY_BODY_MAX,
+  BACKEND_BOOT, KEY_FILE, KEY_PROVIDERS, PROFILE_NAME, migrateProfile, NOTIFY_TITLE_MAX, NOTIFY_BODY_MAX,
   bundledBackend, backendArgs, pickFreePort, pythonCandidates, dataDir, keyFilePath, backendEnv, validKey, validKeyName,
   saveKeyFile, loadKeyFile, removeKeyFile, keyProvider, keyLabelProblem, loadKeyEntries, loadKeys, saveNamedKey, removeNamedKey,
   cleanText, notification, linkAction, escapeHtml, statusPage,

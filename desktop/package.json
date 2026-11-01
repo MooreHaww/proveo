@@ -1,8 +1,8 @@
 {
-  "name": "pi-edge-router-desktop",
+  "name": "proveo-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Desktop shell for the Eco app (pi-edge-router): runs eco_server.py locally and shows it in a window.",
+  "description": "Desktop shell for Proveo: runs eco_server.py locally and shows it in a window.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -14,8 +14,8 @@
     "electron-builder": "26.18.0"
   },
   "build": {
-    "appId": "pi-edge-router.eco",
-    "productName": "Eco",
+    "appId": "proveo.app",
+    "productName": "Proveo",
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"
@@ -27,7 +27,7 @@
     ],
     "extraResources": [
       {
-        "from": "../build/eco-backend",
+        "from": "../build/proveo-backend",
         "to": "backend"
       },
       {

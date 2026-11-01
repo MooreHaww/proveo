@@ -1,4 +1,4 @@
-// Electron shell around the Eco app: starts the backend on a free loopback port (the bundled exe when
+// Electron shell around Proveo: starts the backend on a free loopback port (the bundled exe when
 // installed, eco_server.py on the repo's Python with `npm start`), shows it in a locked-down window, and
 // keeps the named API keys encrypted with safeStorage. A key is never logged, never put in a URL, an
 // argument or the environment: it goes to the backend by POST /api/key.
@@ -16,9 +16,11 @@ const ICON = path.join(app.isPackaged ? process.resourcesPath : REPO, "assets", 
 const HEALTH_TIMEOUT_MS = 20000;
 const RESTART_DELAY_MS = 1500;  // lets the page show its "stored" message first
 
-// For tests: run against a throwaway profile instead of the real one.
-if (process.env.ECO_DESKTOP_USER_DATA) app.setPath("userData", process.env.ECO_DESKTOP_USER_DATA);
-else if (app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "Eco"));
+// ECO_DESKTOP_USER_DATA is for tests: a throwaway profile instead of the real one. `npm start` keeps the folder it
+// has always used, whatever the package is called, so renaming the package does not orphan its settings and keys.
+const profile = process.env.ECO_DESKTOP_USER_DATA
+  || path.join(app.getPath("appData"), app.isPackaged ? lib.PROFILE_NAME : "pi-edge-router-desktop");
+app.setPath("userData", lib.migrateProfile(profile));
 
 let win = null;
 let backend = null;  // { child, port, origin, allowCloud, output, exited, stopping }
@@ -81,7 +83,7 @@ async function startBackend(allowCloud) {
   child.on("exit", (code, signal) => {
     b.exited = signal ? `signal ${signal}` : `exit code ${code}`;
     if (backend === b && !b.stopping && !restarting) {
-      showError("The Eco backend stopped unexpectedly", `${b.exited}\n\n${b.output}`);
+      showError("The Proveo backend stopped unexpectedly", `${b.exited}\n\n${b.output}`);
     }
   });
   const deadline = Date.now() + HEALTH_TIMEOUT_MS;
@@ -132,7 +134,7 @@ function scheduleRestart() {
     try { hash = new URL(win.webContents.getURL()).hash; } catch (e) { /* keep "" */ }
     stopBackend(backend);
     try { await launch(hash); }
-    catch (e) { showError("Eco mode could not restart its backend", e.message); }
+    catch (e) { showError("Proveo could not restart its backend", e.message); }
     finally { restarting = false; }
   }, RESTART_DELAY_MS);
 }
@@ -149,7 +151,7 @@ function appOrigin() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 900, minHeight: 600, icon: ICON, title: "Eco mode",
+    width: 1280, height: 860, minWidth: 900, minHeight: 600, icon: ICON, title: "Proveo",
     backgroundColor: "#F7F6F1",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -171,7 +173,7 @@ function createWindow() {
     if (lib.linkAction(url, appOrigin()) !== "allow") event.preventDefault();
   });
   win.on("closed", () => { win = null; });
-  win.loadURL(dataUrl(lib.statusPage("Starting Eco mode…", "")));
+  win.loadURL(dataUrl(lib.statusPage("Starting Proveo…", "")));
 }
 
 /* ---------- Page hooks (window.ecoDesktop) ---------- */
@@ -221,12 +223,12 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
-    if (process.platform === "win32") app.setAppUserModelId("pi-edge-router.eco");
+    if (process.platform === "win32") app.setAppUserModelId("proveo.app");
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     createWindow();
     try { await launch(""); }
-    catch (e) { showError("Eco mode could not start", e.message); }
+    catch (e) { showError("Proveo could not start", e.message); }
   });
 
   app.on("window-all-closed", () => app.quit());
