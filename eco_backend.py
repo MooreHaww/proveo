@@ -1,8 +1,8 @@
 """Entry point of the bundled Windows backend (built by build_backend.py). The installed desktop app
-runs this as eco-backend.exe; `npm start` and the command line use eco_server.py on a normal Python.
+runs this as proveo-backend.exe; `npm start` and the command line use eco_server.py on a normal Python.
 
-  eco-backend.exe --eco-check SCRIPT      the code checker's child process, see bench_coding._check_command
-  eco-backend.exe [--watch-stdin] [eco_server.py options]      the server
+  proveo-backend.exe --eco-check SCRIPT      the code checker's child process, see bench_coding._check_command
+  proveo-backend.exe [--watch-stdin] [eco_server.py options]      the server
 
 In the bundle sys.executable is this exe, so there is no `python -I` for the checker to start. The
 --eco-check mode stands in for it and is handled before the server is imported.
@@ -42,7 +42,7 @@ def watch_stdin():
 def main(argv):
     if argv[:1] == ["--eco-check"]:
         if len(argv) != 2:
-            sys.exit("usage: eco-backend --eco-check SCRIPT")
+            sys.exit("usage: proveo-backend --eco-check SCRIPT")
         run_check(argv[1])
         return
     if argv[:1] == ["--watch-stdin"]:
@@ -51,7 +51,7 @@ def main(argv):
     # PYTHONIOENCODING does not reach a frozen Python, and the server prints file paths.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    sys.argv = ["eco-backend"] + argv
+    sys.argv = ["proveo-backend"] + argv
     import eco_server
     eco_server.main()
 

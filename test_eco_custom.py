@@ -67,6 +67,27 @@ class CustomCoreTests(unittest.TestCase):
         self.assertEqual(first["error"], "tests failed")
         self.assertEqual(first["first_failure"], 'tests line 2: assert is_palindrome("abc") == False')
 
+    def test_the_log_never_holds_the_failure_text(self):
+        pi, _ = fake("pi", WRONG)
+        pc, _ = fake("pc", GOOD)
+        _, result = self.solve([pi, pc])
+        self.assertIn("first_failure", result["attempts"][0], "the live result keeps it")
+        with open(self.log, encoding="utf-8") as f:
+            line = f.read()
+        entry = json.loads(line)
+        self.assertNotIn("first_failure", line)
+        self.assertNotIn("abc", line, "the failed check")
+        self.assertEqual((entry["attempts"][0]["passed"], entry["attempts"][0]["error"]), (False, "tests failed"))
+
+    def test_the_log_never_holds_a_benchmark_failure_either(self):
+        pi, _ = fake("pi", WRONG)
+        result = eco_core.solve(PROMPT, [(("abc",), False)], ENTRY, [pi], log_path=self.log, allow_cloud=False)
+        self.assertIn("input=", result["attempts"][0]["first_failure"])
+        with open(self.log, encoding="utf-8") as f:
+            line = f.read()
+        self.assertNotIn("first_failure", line)
+        self.assertNotIn("abc", line)
+
     def test_first_failure_is_capped_and_shows_other_errors(self):
         long_assert = 'assert is_palindrome("ab") == True, "' + "x" * 500 + '"\n'
         r = bench_coding.run_custom_tests("def is_palindrome(s):\n    return False", long_assert)
@@ -175,6 +196,59 @@ class CustomServerTests(ServerCase):
         self.assertEqual(again["result"]["solved_by"], "memory")
         self.assertNotIn("check_note", self.wait_for(self.solve(eco=True), lambda s: s["status"] != "running"))
 
+    def run_custom(self):
+        status, text = self.request("/api/solve", {"custom": self.custom(), "eco": True})
+        self.assertEqual(status, 202, text)
+        return self.wait_for(json.loads(text)["job_id"], lambda s: s["status"] != "running")
+
+    def test_the_job_carries_the_passing_answer_and_the_log_does_not(self):
+        pi, _ = fake("pi", WRONG)
+        pc, _ = fake("pc", GOOD)
+        self.start([pi, pc], pc, memory=True)
+        state = self.run_custom()
+        self.assertEqual(state["answer"], {"tier": "pc", "code": "def is_palindrome(s):\n    return s == s[::-1]", "passed": True, "first_failure": ""})
+        self.assertNotIn(PROMPT, json.dumps(state), "never the prompt")
+        self.assertNotIn("abba", json.dumps(state), "never the checks")
+        with open(self.log, encoding="utf-8") as f:
+            log = f.read()
+        self.assertIn("task_id", log)
+        for private in ("s[::-1]", "return True", '"answer"', '"code"', PROMPT, "abba"):
+            self.assertNotIn(private, log)
+        again = self.run_custom()
+        self.assertEqual((again["answer"]["tier"], again["answer"]["passed"]), ("memory", True))
+        self.assertIn("s[::-1]", again["answer"]["code"])
+
+    def test_with_no_pass_the_job_carries_the_last_answer_and_its_failed_check(self):
+        pi, _ = fake("pi", GOOD.replace("s == s[::-1]", "False"))
+        pc, _ = fake("pc", WRONG)
+        self.start([pi, pc], pc)
+        answer = self.run_custom()["answer"]
+        self.assertEqual((answer["tier"], answer["passed"], answer["code"]), ("pc", False, "def is_palindrome(s):\n    return True"))
+        self.assertIn('assert is_palindrome("abc") == False', answer["first_failure"])
+
+    def test_a_tier_that_never_answered_leaves_no_answer(self):
+        pi, _ = fake("pi", GOOD)
+        pi.ask = mock.Mock(side_effect=OSError("down"))
+        self.start([pi], pi)
+        self.assertNotIn("answer", self.run_custom())
+
+    def test_a_benchmark_job_has_no_answer(self):
+        pi, _ = fake("pi", GOOD)
+        self.start([pi], pi)
+        self.assertNotIn("answer", self.wait_for(self.solve(eco=True), lambda s: s["status"] != "running"))
+
+    def test_a_key_in_an_answer_is_scrubbed_from_the_response(self):
+        key = "made-up-answer-key-0123456789"
+        pi, _ = fake("pi", f"```python\n# {key}\ndef is_palindrome(s):\n    return s == s[::-1]\n```")
+        self.start([pi], pi)
+        self.assertEqual(self.request("/api/key", {"name": "Mine", "key": key, "provider": "Other"})[0], 200)
+        status, text = self.request("/api/solve", {"custom": self.custom(), "eco": True})
+        job_id = json.loads(text)["job_id"]
+        self.wait_for(job_id, lambda s: s["status"] != "running")
+        raw = self.request(f"/api/jobs/{job_id}")[1]
+        self.assertIn('"answer"', raw)
+        self.assertNotIn(key, raw)
+
     def test_large_custom_task_within_the_limits_is_accepted(self):
         pi, _ = fake("pi", GOOD)
         self.start([pi], pi)
@@ -205,6 +279,18 @@ class CustomServerTests(ServerCase):
         self.assertEqual(self.request("/api/solve", ok, {"Host": "evil.example"})[0], 403)
         self.assertEqual(pi_calls, [])
         self.assertFalse(os.path.exists(self.log), "rejected requests run and log nothing")
+
+    def test_a_failed_check_shows_in_the_job_but_not_in_the_log(self):
+        pi, _ = fake("pi", WRONG)
+        self.start([pi], pi)
+        state = self.run_custom()
+        self.assertIn('assert is_palindrome("abc") == False', state["attempts"][0]["first_failure"])
+        self.assertIn('assert is_palindrome("abc") == False', state["answer"]["first_failure"])
+        with open(self.log, encoding="utf-8") as f:
+            log = f.read()
+        self.assertTrue(log)
+        for private in ("first_failure", "is_palindrome", "abc"):
+            self.assertNotIn(private, log)
 
     def test_api_key_never_in_responses_or_log(self):
         # The user's own assertion message contains both keys (env and in-memory), so the

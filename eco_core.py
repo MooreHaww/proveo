@@ -308,12 +308,15 @@ def make_custom_task(prompt, entry, tests_code):
 
 def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
           allow_cloud=None, on_start=None, on_attempt=None, memory_path=None,
-          cloud_check=None, secrets=(), tests_code=None):
+          cloud_check=None, secrets=(), tests_code=None, on_answer=None):
     """Try each tier in order and stop at the first answer that passes all tests.
 
     Benchmark format: tests is a list of (args, expected). Custom format: tests=None and
     tests_code is the user's assert-based test code (see make_custom_task); attempts then
     also carry first_failure, and task_id defaults to custom:<8 hex of the memory key>.
+    on_answer(tier, code, passed, first_failure) gets each checked answer. Answers never go in
+    the attempts or the result, because those are written to the log. first_failure stays in
+    the returned result but not in the log (see write_log).
     allow_cloud: None reads ALLOW_CLOUD from the environment. on_start(tier_name) and
     on_attempt(attempt) are optional callbacks so a caller can show progress live.
     memory_path: a verified-memory JSONL file, or None to run without memory.
@@ -345,6 +348,8 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             ok, error, first = check_detail(stored["code"], task)
             if ok:
                 attempt.update(memory="hit", passed=True, stored_tier=stored.get("tier"))
+                if on_answer:
+                    on_answer("memory", stored["code"], True, "")
             else:
                 attempt["error"] = "stored answer failed the re-check" + (f": {error}" if error else "")
                 if custom or first:
@@ -396,6 +401,8 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             attempt["first_failure"] = first
         attempt["seconds"] = round(time.time() - start, 2)
         attempts.append(attempt)
+        if on_answer:
+            on_answer(tier.name, code, attempt["passed"], first or attempt["error"])
         if on_attempt:
             on_attempt(attempt)
         if attempt["passed"]:
@@ -439,7 +446,9 @@ def redact(text, secrets=()):
 
 
 def write_log(result, log_path=LOG_PATH, secrets=()):
-    line = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **result}
+    # first_failure can quote the user's checks, so it never reaches the log.
+    attempts = [{k: v for k, v in a.items() if k != "first_failure"} for a in result["attempts"]]
+    line = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"), **result, "attempts": attempts}
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(redact(json.dumps(line), secrets) + "\n")

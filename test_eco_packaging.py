@@ -1,6 +1,6 @@
 """Tests for packaging: where the log and memory go, the checker's bundled mode, the built backend.
 
-The Built* classes run the real build/eco-backend/eco-backend.exe, and skip when it has not been built
+The Built* classes run the real build/proveo-backend/proveo-backend.exe, and skip when it has not been built
 (python build_backend.py). Fake model servers, made-up keys and temp folders only. No real models,
 no cloud calls. Run with: python -m unittest -v test_eco_packaging
 """
@@ -24,8 +24,8 @@ import eco_server
 from test_eco_settings import FakeModelServer, local_tier
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-BUILT = os.path.join(REPO, "build", "eco-backend")
-EXE = os.path.join(BUILT, "eco-backend.exe")
+BUILT = os.path.join(REPO, "build", "proveo-backend")
+EXE = os.path.join(BUILT, "proveo-backend.exe")
 KEY = "made-up-packaging-key-0123456789"
 TASK = {"id": "t", "entry": "add", "tests": [[[1, 2], 3], [[5, 5], 10]]}
 GOOD = "def add(a, b):\n    return a + b\n"
@@ -168,8 +168,8 @@ class CheckerCommand(unittest.TestCase):
         self.assertEqual(bench_coding._check_command("x.py"), [sys.executable, "-I", "x.py"])
 
     def test_the_bundle_uses_its_own_check_mode(self):
-        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(sys, "executable", "eco-backend.exe"):
-            self.assertEqual(bench_coding._check_command("x.py"), ["eco-backend.exe", "--eco-check", "x.py"])
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(sys, "executable", "proveo-backend.exe"):
+            self.assertEqual(bench_coding._check_command("x.py"), ["proveo-backend.exe", "--eco-check", "x.py"])
 
 
 class CheckMode(unittest.TestCase):
@@ -233,7 +233,7 @@ class BuildChoices(unittest.TestCase):
             self.assertNotIn(unwanted, names)
 
 
-@unittest.skipUnless(os.path.exists(EXE), "build/eco-backend has not been built")
+@unittest.skipUnless(os.path.exists(EXE), "build/proveo-backend has not been built")
 class BuiltCheckMode(unittest.TestCase):
     def run_script(self, text, sibling=False):
         with tempfile.TemporaryDirectory() as tmp:
@@ -293,7 +293,7 @@ print(json.dumps([[t.wait_reason for t in built], sent, [t.wait_reason for t in 
         self.assertEqual(p.stdout.strip(), "True", p.stderr)
 
 
-@unittest.skipUnless(os.path.exists(EXE), "build/eco-backend has not been built")
+@unittest.skipUnless(os.path.exists(EXE), "build/proveo-backend has not been built")
 class BuiltServer(ServerProcess):
     @staticmethod
     def listing():
@@ -311,7 +311,7 @@ class BuiltServer(ServerProcess):
 
     def test_serves_the_page_and_the_measured_figures_from_the_bundle(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
-            self.assertIn("Eco mode", r.read().decode("utf-8"))
+            self.assertIn("<title>Proveo</title>", r.read().decode("utf-8"))
         with urllib.request.urlopen(self.base + "/assets/logo.svg", timeout=10) as r:
             self.assertEqual(r.status, 200)
         self.assertEqual(self.get("/api/measured"), eco_server.measured_numbers())

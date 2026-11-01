@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Project
-pi-edge-router is Eco mode for AI coding: a task goes up a ladder of models, cheapest first, and the first answer that passes the developer's own tests wins.
+Proveo (repo and folder: pi-edge-router) lets your tests choose the model: a task goes up a ladder of models, cheapest first, and the first answer that passes the developer's own tests wins.
 Honest scope: it only works for tasks with tests, and the code check is a subprocess with a time limit, not a real sandbox.
 Built for the Meta Global AI Developer Hackathon. It began as a router (router.py) from a quantized Llama 3.2 3B (Q4_K_M) on a Raspberry Pi 5 to a cloud model (Meta Model API, Muse Spark).
 
@@ -21,7 +21,7 @@ Built for the Meta Global AI Developer Hackathon. It began as a router (router.p
 - eco_backend.py: entry point of the bundled backend. Its private `--eco-check` mode is the checker's child process.
 - web/index.html: the whole app page (Run, Models, Cloud and Budget, About).
 - desktop/: Electron shell. main.js (window, backend lifecycle, keys), lib.js (testable helpers), preload.js (the page's only bridge).
-- build_backend.py: builds build/eco-backend/eco-backend.exe with PyInstaller in its own virtualenv under build/.
+- build_backend.py: builds build/proveo-backend/proveo-backend.exe with PyInstaller in its own virtualenv under build/.
 - Installer: `npm run dist` runs build_backend.py, then electron-builder writes an NSIS installer to desktop/dist/.
 - router.py: the original routing decision. In order, these escalate to the cloud: question too long
   (MAX_QUESTION_CHARS = 500), letter/spelling question, empty answer, refusal phrase,
@@ -39,7 +39,7 @@ cd desktop; npm test                                           # Node tests
 cd desktop; npm start                                          # desktop app from the repo, uses .venv
 cd desktop; npm run dist                                       # build the installer
 ```
-- The packaging tests that need the bundled exe skip until build/eco-backend exists.
+- The packaging tests that need the bundled exe skip until build/proveo-backend exists.
 - Do not start or stop the user's own servers. For a live check, see Gotchas.
 
 ## Measurement and build rules
@@ -96,7 +96,7 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 | Settings | user_data/settings.json | `<profile>/eco/settings.json` |
 | Keys | memory only | `<profile>/model-key.enc`, encrypted |
 
-- Installed app profile: `%APPDATA%\Eco`. ECO_DESKTOP_USER_DATA overrides the profile; ECO_DATA_DIR overrides the settings folder.
+- Installed app profile: `%APPDATA%\Proveo`. An old `%APPDATA%\Eco` moves there once, whole, if the new folder does not exist. `npm start` uses `%APPDATA%\pi-edge-router-desktop`. ECO_DESKTOP_USER_DATA overrides the profile; ECO_DATA_DIR overrides the settings folder.
 - `--log` and `--memory` on eco_server.py override those paths.
 - build_backend.py bundles an explicit list of result CSVs. It never bundles the Eco log, memory, router_log.csv or cloud_calls.csv.
 
@@ -109,13 +109,13 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 - A Windows child process that inherits a stdin pipe hangs while another thread reads that pipe. Checkers use stdin=DEVNULL.
 - Use the Edit tool, not shell heredocs, for files with backslashes. Heredocs mangle them.
 - For live runs, use a throwaway repo copy and temp profiles, so results/ is never touched.
-- Stop only processes you started, by exact PID. Never by name: that can hit the user's own Eco window or servers.
+- Stop only processes you started, by exact PID. Never by name: that can hit the user's own Proveo window or servers.
 - CRLF warnings from git are harmless.
 
 ## Untested
-- Real OpenAI, Claude and Gemini providers: only fake servers so far. Presets stay labelled untested.
+- Real OpenAI, Claude and Gemini providers: only fake servers so far. The page has no untested badges; the provider info popover says only Meta Muse Spark has been tested.
 - SmartScreen on a fresh machine. The installer is not code-signed.
-- The default install folder, `%LOCALAPPDATA%\Programs\Eco`: installs were tested in temp folders.
+- The default install folder, `%LOCALAPPDATA%\Programs\Proveo`: installs were tested in temp folders.
 
 ## Working style
 - The user is new to this stack. Before running commands, explain what you are about to do in one or two sentences.
