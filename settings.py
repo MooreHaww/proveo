@@ -18,10 +18,42 @@ KINDS = ("local", "cloud")
 PROVIDERS = ("meta", "openai_compatible")  # openai_compatible cloud is UNTESTED
 PERIODS = ("month",)
 TIER_FIELDS = {"id", "name", "kind", "provider", "base_url", "model", "flags", "enabled",
-               "price_in_per_m", "price_out_per_m"}
-FLAG_FIELDS = {"disable_thinking", "effort"}
+               "price_in_per_m", "price_out_per_m", "key_name"}
+FLAG_FIELDS = {"disable_thinking", "effort", "omit_temperature", "max_tokens_field"}
+# What some OpenAI-compatible cloud services need instead of the usual request (see eco_core.ask_openai_chat).
+MAX_TOKENS_FIELDS = ("max_tokens", "max_completion_tokens")
+# An OpenAI-compatible cloud base URL has a version in its path: /v1, /openai/v1, /v1beta/openai.
+VERSION_SEGMENT = re.compile(r"/v\d+[a-z0-9]*(/|$)")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 EFFORT_RE = re.compile(r"^[a-z]{1,16}$")
+KEY_NAME_MAX = 40
+KEY_NAME_SIZE = f"A key name must be 1-{KEY_NAME_MAX} characters"
+KEY_NAME_LABEL = "Use a short label, not the key itself"
+# How API keys commonly start, and the long unbroken strings they are made of.
+KEY_PREFIXES = ("sk-", "sk_", "pk-", "rk-", "AIza", "gsk_", "ghp_", "gho_", "ghs_", "github_pat_", "xai-",
+                "hf_", "pplx-", "ya29.", "AKIA", "Bearer")
+KEY_LONG_WORD = 24
+KEY_TOKEN_RUN = re.compile(r"[A-Za-z0-9]{16,}")
+
+
+def _looks_like_key(name):
+    return any(word.startswith(KEY_PREFIXES) or len(word) >= KEY_LONG_WORD
+               or any(re.search(r"\d", run) for run in KEY_TOKEN_RUN.findall(word))
+               for word in name.split())
+
+
+def clean_key_name(name, secrets=()):
+    """The trimmed name of an API key, or ValueError in plain words. The name is never echoed:
+    someone may have pasted the key into it by mistake."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(KEY_NAME_SIZE)
+    clean = name.strip()
+    folded = clean.casefold()
+    if _looks_like_key(clean) or any(len(s) >= 8 and s.casefold() in folded for s in secrets):
+        raise ValueError(KEY_NAME_LABEL)
+    if len(clean) > KEY_NAME_MAX or not clean.isprintable():
+        raise ValueError(KEY_NAME_SIZE)
+    return clean
 
 
 def data_dir():
@@ -86,10 +118,13 @@ def _tier(raw, i, errors):
         tier["provider"] = provider
     url = raw.get("base_url")
     parts = urlsplit(url) if isinstance(url, str) else None
+    any_version = kind == "cloud" and provider == "openai_compatible"
     if (parts is None or parts.scheme not in ("http", "https") or not parts.hostname
             or parts.query or parts.fragment or parts.username or parts.password
-            or not url.rstrip("/").endswith("/v1")):
-        errors.append(f"{where}: base_url must be an http(s) URL ending in /v1, without credentials")
+            or not (VERSION_SEGMENT.search(parts.path) if any_version else url.rstrip("/").endswith("/v1"))):
+        errors.append(f"{where}: base_url must be an http(s) URL "
+                      + ("with a version in its path, like /v1," if any_version else "ending in /v1,")
+                      + " without credentials")
     tier["base_url"] = url.rstrip("/") if isinstance(url, str) else url
     model = raw.get("model")
     if not isinstance(model, str) or not model.strip() or len(model) > 200:
@@ -106,6 +141,12 @@ def _tier(raw, i, errors):
     if "effort" in flags and (provider != "meta" or not isinstance(flags["effort"], str)
                               or not EFFORT_RE.match(flags["effort"])):
         errors.append(f"{where}: effort is a short word and only applies to the meta provider")
+    if {"omit_temperature", "max_tokens_field"} & set(flags) and not any_version:
+        errors.append(f"{where}: omit_temperature and max_tokens_field only apply to openai_compatible cloud tiers")
+    if "omit_temperature" in flags and not isinstance(flags["omit_temperature"], bool):
+        errors.append(f"{where}: omit_temperature must be true or false")
+    if "max_tokens_field" in flags and flags["max_tokens_field"] not in MAX_TOKENS_FIELDS:
+        errors.append(f"{where}: max_tokens_field must be {' or '.join(MAX_TOKENS_FIELDS)}")
     tier["flags"] = {k: flags[k] for k in sorted(flags) if k in FLAG_FIELDS}
     enabled = raw.get("enabled", True)
     if not isinstance(enabled, bool):
@@ -120,6 +161,15 @@ def _tier(raw, i, errors):
             tier[field] = raw.get(field)
     elif "price_in_per_m" in raw or "price_out_per_m" in raw:
         errors.append(f"{where}: prices only apply to openai_compatible cloud tiers")
+    if raw.get("key_name") is not None:
+        # Only a name; the key itself never reaches the settings file.
+        if kind != "cloud":
+            errors.append(f"{where}: key_name only applies to cloud tiers")
+        else:
+            try:
+                tier["key_name"] = clean_key_name(raw["key_name"])
+            except ValueError as e:
+                errors.append(f"{where}: {e}")
     return tier
 
 

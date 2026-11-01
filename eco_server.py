@@ -4,8 +4,9 @@
 
 Binds to 127.0.0.1 only. The cloud tier works only if ALLOW_CLOUD=1 was set when the
 server started and the monthly budget (settings.py, budget.py) is not used up.
-The ladder comes from the saved settings. The API key is held in this process's memory only
-(POST /api/key, or MODEL_API_KEY at start); it is never returned: every response body is scrubbed.
+The ladder comes from the saved settings. Named API keys are held in this process's memory only
+(POST /api/key, or MODEL_API_KEY at start as "Default"); they are never returned: every response
+body is scrubbed, and GET /api/key/status lists names only.
 """
 import argparse
 import glob
@@ -47,6 +48,7 @@ CUSTOM_CHECK_NOTE = ("NOT a real sandbox: the answer and your tests run together
 CLOUD_DISABLED = "cloud disabled: start the server with ALLOW_CLOUD=1 to use the cloud tier"
 NO_CLOUD_TIER = "no cloud tier is enabled in the settings"
 PROVIDERS = {"meta": "tested", "openai_compatible": "UNTESTED"}
+DEFAULT_KEY_NAME = "Default"  # a key with no name: MODEL_API_KEY, or the old {"key": ...} request
 
 
 def measured_numbers():
@@ -92,27 +94,53 @@ class EcoApp:
         self.started = datetime.now(timezone.utc)
         self.jobs = {}
         self.lock = threading.Lock()
-        # The API key lives only here, in process memory. Every key ever set is kept (in memory)
-        # so that responses and logs stay scrubbed of it after it is replaced.
-        self._key = os.environ.get("MODEL_API_KEY", "")
-        self._seen_keys = {self._key} if self._key else set()
+        # API keys live only here, in process memory, by name. Every key ever set is kept (in memory)
+        # so that responses and logs stay scrubbed of it after it is replaced or removed.
+        env_key = os.environ.get("MODEL_API_KEY", "")
+        self._keys = {DEFAULT_KEY_NAME: env_key} if env_key else {}
+        self._seen_keys = {env_key} if env_key else set()
 
-    def set_key(self, key):
+    def set_key(self, name, key):
+        """Add a named key, or replace the one with that name (ignoring case). Returns the name."""
         with self.lock:
-            self._key = key or ""
-            if key:
-                self._seen_keys.add(key)
-        return self.key_status()
+            clean = settings.clean_key_name(name, [*self._seen_keys, key])
+            # Scrubbing removes key text from responses, so it must not be able to eat a name.
+            if any(key.casefold() in n.casefold() for n in self._keys):
+                raise ValueError(settings.KEY_NAME_LABEL)
+            self._forget_name(clean)
+            self._keys[clean] = key
+            self._seen_keys.add(key)
+        return clean
+
+    def remove_key(self, name):
+        """Removing a name that isn't there is fine: the result is the same."""
+        with self.lock:
+            self._forget_name(name)
+
+    def _forget_name(self, name):
+        for existing in [n for n in self._keys if n.casefold() == name.strip().casefold()]:
+            del self._keys[existing]
+
+    def _key_copy(self):
+        with self.lock:
+            return dict(self._keys)
 
     def key_status(self):
-        return {"set": bool(self._key)}
+        """Names and the rungs using each. Never any part of a key: no length, no last 4."""
+        keys = self._key_copy()
+        try:
+            tiers = [t for t in settings.load()["tiers"] if t["kind"] == "cloud"]
+        except ValueError:
+            tiers = []
+        return {"keys": [{"name": n, "rungs": [t["name"] for t in tiers if eco_core.key_name_for_tier(t, keys)[0] == n]}
+                         for n in sorted(keys, key=str.casefold)]}
 
     def secrets(self):
         with self.lock:
             return sorted(self._seen_keys)
 
     def settings_ladder(self):
-        return eco_core.build_tiers(settings.load(), key=self._key, allow_cloud=self.allow_cloud)
+        return eco_core.build_tiers(settings.load(), keys=self._key_copy(), allow_cloud=self.allow_cloud)
 
     def settings_cloud_tier(self):
         """Eco off: the first enabled cloud tier, or None."""
@@ -120,9 +148,15 @@ class EcoApp:
 
     def settings_view(self):
         # saved: False until the settings file exists (the page shows its first-run card).
-        return {**settings.load(), "key_set": bool(self._key), "max_tiers": settings.MAX_TIERS,
-                "providers": PROVIDERS, "saved": os.path.exists(settings.settings_path()),
-                "defaults": settings.default_settings()["tiers"]}
+        current, keys = settings.load(), self._key_copy()
+        rung_keys = {}
+        for t in current["tiers"]:
+            if t["kind"] == "cloud":
+                name, reason = eco_core.key_name_for_tier(t, keys)
+                rung_keys[t["id"]] = {"key_name": name, "reason": reason}
+        return {**current, "key_set": bool(keys), "key_names": sorted(keys, key=str.casefold), "rung_keys": rung_keys,
+                "max_tiers": settings.MAX_TIERS, "providers": PROVIDERS,
+                "saved": os.path.exists(settings.settings_path()), "defaults": settings.default_settings()["tiers"]}
 
     def save_settings(self, req):
         if not isinstance(req, dict) or set(req) - {"tiers", "budget"}:
@@ -186,7 +220,7 @@ class EcoApp:
                 raise ValueError("unknown task_id")
         job = {"id": uuid.uuid4().hex[:12], "task_file": task_file, "task_id": task_id,
                "custom": custom is not None, "eco": eco,
-               "status": "running", "current": None, "attempts": [], "skipped": [],
+               "status": "running", "current": None, "attempts": [], "skipped": [], "skip_reasons": {},
                "result": None, "message": ""}
         if custom is not None:
             job["check_note"] = CUSTOM_CHECK_NOTE
@@ -196,9 +230,10 @@ class EcoApp:
             # Eco off means cloud only. If the cloud may not be called (ALLOW_CLOUD off, budget
             # used up, no cloud tier) the job ends at once: nothing is called or logged.
             cloud = self.cloud_tier()
-            reason = NO_CLOUD_TIER if cloud is None else self.cloud_reason()
+            reason = NO_CLOUD_TIER if cloud is None else (cloud.wait_reason or self.cloud_reason())
             if reason:
-                job.update(status="done", skipped=[cloud.name if cloud else "cloud"], message=reason)
+                name = cloud.name if cloud else "cloud"
+                job.update(status="done", skipped=[name], skip_reasons={name: reason}, message=reason)
             tiers = [cloud]
         with self.lock:
             self.jobs[job["id"]] = job
@@ -236,9 +271,13 @@ class EcoApp:
             message = ""
             if result["skipped"]:
                 message = CLOUD_DISABLED if not self.allow_cloud else result.get("skip_reason", "")
+                # Every skipped rung is only waiting for a key: that is the thing to say.
+                reasons = set(result["skip_reasons"].values())
+                if reasons <= {eco_core.NO_KEY_REASON, eco_core.CHOOSE_KEY_REASON}:
+                    message = sorted(reasons)[-1]
             with self.lock:
                 job.update(status="done", current=None, result=result, skipped=result["skipped"],
-                           message=message)
+                           skip_reasons=result.get("skip_reasons", {}), message=message)
         except BaseException as e:  # keep the job visible instead of losing the thread
             with self.lock:
                 job.update(status="error", current=None, message="error: " + repr(e))
@@ -386,14 +425,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": repr(e)}, 500)
         self._json({"error": "not found"}, 404)
 
+    def _drain(self):
+        """Read a refused request's body. On Windows, closing a socket with unread data resets the
+        connection, and the client can lose the answer."""
+        try:
+            self.rfile.read(min(int(self.headers.get("Content-Length") or 0), MAX_SOLVE_BODY))
+        except (ValueError, OSError):
+            pass
+
     def do_POST(self):
         if not self._host_ok():
+            self._drain()
             return self._json({"error": "bad host"}, 403)
         if not self._origin_ok():
+            self._drain()
             return self._json({"error": "bad origin"}, 403)
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._drain()
             return self._json({"error": "send JSON"}, 415)
-        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/detect", "/api/key"}
+        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/detect", "/api/key", "/api/key/remove"}
         if self.path not in routes:
             return self._json({"error": "not found"}, 404)
         try:
@@ -408,10 +458,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.detect(req.get("address")))
             if self.path == "/api/key":
                 # The key is never echoed, not even in an error message.
-                if set(req) != {"key"} or not (req["key"] is None or valid_key(req["key"])):
-                    raise ValueError('send {"key": "<8-512 printable characters, no spaces>"} '
-                                     'or {"key": null} to forget it')
-                return self._json(self.app.set_key(req["key"]))
+                if set(req) == {"name", "key"} and valid_key(req["key"]):
+                    self.app.set_key(req["name"], req["key"])
+                    return self._json(self.app.key_status())
+                # The old single-key request still works and answers as it did: the name is "Default".
+                if set(req) == {"key"} and valid_key(req["key"]):
+                    self.app.set_key(DEFAULT_KEY_NAME, req["key"])
+                    return self._json({"set": True})
+                if set(req) == {"key"} and req["key"] is None:
+                    self.app.remove_key(DEFAULT_KEY_NAME)
+                    return self._json({"set": False})
+                raise ValueError('send {"name": "<a label>", "key": "<8-512 printable characters, '
+                                 'no spaces>"}; POST /api/key/remove forgets one')
+            if self.path == "/api/key/remove":
+                if set(req) != {"name"} or not isinstance(req["name"], str):
+                    raise ValueError('send {"name": "<the key\'s name>"}')
+                self.app.remove_key(req["name"])
+                return self._json(self.app.key_status())
             if "custom" in req:
                 if "task_file" in req or "task_id" in req:
                     raise ValueError("send either custom or task_file and task_id, not both")
@@ -454,9 +517,13 @@ def make_server(app, port=DEFAULT_PORT):
 def main():
     parser = argparse.ArgumentParser(description="Eco mode demo server (127.0.0.1 only)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--log", help=f"spend log file (default: {eco_core.LOG_PATH})")
+    parser.add_argument("--memory", help=f"verified memory file (default: {eco_core.MEMORY_PATH})")
     args = parser.parse_args()
+    log_path = os.path.abspath(args.log) if args.log else eco_core.LOG_PATH
+    memory_path = os.path.abspath(args.memory) if args.memory else eco_core.MEMORY_PATH
     os.chdir(HERE)  # data/ and results/ paths are relative to the repo root
-    app = EcoApp(memory_path=eco_core.MEMORY_PATH)
+    app = EcoApp(log_path=log_path, memory_path=memory_path)
     try:
         server = make_server(app, args.port)
     except OSError as e:

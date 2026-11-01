@@ -25,3 +25,7 @@ user_data/
 
 # Desktop shell dependencies
 desktop/node_modules/
+
+# Packaging output (build_backend.py, npm run dist)
+build/
+desktop/dist/

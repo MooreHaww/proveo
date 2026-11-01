@@ -1,6 +1,7 @@
-// Electron shell around the Eco app: starts eco_server.py on a free loopback port, shows it in a
-// locked-down window, and keeps the API key encrypted with safeStorage. The key is never logged,
-// never put in a URL, an argument or the environment: it goes to the backend by POST /api/key.
+// Electron shell around the Eco app: starts the backend on a free loopback port (the bundled exe when
+// installed, eco_server.py on the repo's Python with `npm start`), shows it in a locked-down window, and
+// keeps the named API keys encrypted with safeStorage. A key is never logged, never put in a URL, an
+// argument or the environment: it goes to the backend by POST /api/key.
 "use strict";
 
 const { app, BrowserWindow, Notification, ipcMain, safeStorage, session, shell } = require("electron");
@@ -11,12 +12,13 @@ const path = require("path");
 const lib = require("./lib");
 
 const REPO = path.resolve(__dirname, "..");
-const ICON = path.join(REPO, "assets", process.platform === "win32" ? "icon.ico" : "icon.png");
+const ICON = path.join(app.isPackaged ? process.resourcesPath : REPO, "assets", process.platform === "win32" ? "icon.ico" : "icon.png");
 const HEALTH_TIMEOUT_MS = 20000;
 const RESTART_DELAY_MS = 1500;  // lets the page show its "stored" message first
 
 // For tests: run against a throwaway profile instead of the real one.
 if (process.env.ECO_DESKTOP_USER_DATA) app.setPath("userData", process.env.ECO_DESKTOP_USER_DATA);
+else if (app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "Eco"));
 
 let win = null;
 let backend = null;  // { child, port, origin, allowCloud, output, exited, stopping }
@@ -28,14 +30,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- Backend process ---------- */
 
-function spawnPython(port, env) {
-  const candidates = lib.pythonCandidates(REPO);
+function spawnBackend(port, env) {
+  const args = lib.backendArgs(port, app.getPath("userData"));
+  const candidates = app.isPackaged
+    ? [{ file: lib.bundledBackend(process.resourcesPath), args: ["--watch-stdin", ...args], cwd: process.resourcesPath }]
+    : lib.pythonCandidates(REPO).map((file) => ({ file, args: ["-c", lib.BACKEND_BOOT, ...args], cwd: REPO }));
   return new Promise((resolve, reject) => {
     const tryNext = (i, errors) => {
-      if (i >= candidates.length) return reject(new Error("Could not start Python.\n" + errors.join("\n")));
-      const child = spawn(candidates[i], ["-c", lib.BACKEND_BOOT, String(port)],
-        { cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
-      child.once("error", (e) => tryNext(i + 1, [...errors, `${candidates[i]}: ${e.message}`]));
+      if (i >= candidates.length) return reject(new Error("Could not start the backend.\n" + errors.join("\n")));
+      const { file, args: argv, cwd } = candidates[i];
+      const child = spawn(file, argv, { cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      child.once("error", (e) => tryNext(i + 1, [...errors, `${file}: ${e.message}`]));
       child.once("spawn", () => resolve(child));
     };
     tryNext(0, []);
@@ -48,7 +53,7 @@ function request(port, method, urlPath, body) {
     const headers = { Host: `127.0.0.1:${port}` };
     if (data) Object.assign(headers, { "Content-Type": "application/json", "Content-Length": data.length });
     const req = http.request({ host: "127.0.0.1", port, method, path: urlPath, headers, timeout: 3000 }, (res) => {
-      res.resume();  // the body is not needed (and for /api/key it is only {"set": ...})
+      res.resume();  // the body is not needed (and for /api/key it is only names)
       res.on("end", () => resolve(res.statusCode));
     });
     req.on("timeout", () => req.destroy(new Error("timed out")));
@@ -62,7 +67,7 @@ async function startBackend(allowCloud) {
   const port = await lib.pickFreePort();
   const env = lib.backendEnv(process.env, app.getPath("userData"), allowCloud);
   fs.mkdirSync(env.ECO_DATA_DIR, { recursive: true });
-  const child = await spawnPython(port, env);
+  const child = await spawnBackend(port, env);
   const b = { child, port, origin: `http://127.0.0.1:${port}`, allowCloud, output: "", exited: null, stopping: false };
   backend = b;
   const keep = (chunk) => {
@@ -103,19 +108,19 @@ function stopBackend(b) {
   }
 }
 
-/** Start (or restart) the backend, restore a stored key, and load the app page. */
+/** Start (or restart) the backend, restore every stored key, and load the app page. */
 async function launch(hash) {
-  let key = lib.loadKeyFile(keyFile(), safeStorage);
-  if (key === null && fs.existsSync(keyFile())) console.log("A stored key could not be decrypted; starting without it.");
+  let stored = lib.loadKeys(keyFile(), safeStorage);
+  if (stored.size === 0 && fs.existsSync(keyFile())) console.log("The stored keys could not be decrypted; starting without them.");
   try {
-    const b = await startBackend(key !== null);
-    if (key !== null) {
-      const status = await request(b.port, "POST", "/api/key", { key });
-      if (status !== 200) console.log(`Restoring the stored key failed (HTTP ${status}).`);
+    const b = await startBackend(stored.size > 0);
+    for (const [name, key] of stored) {
+      const status = await request(b.port, "POST", "/api/key", { name, key });
+      if (status !== 200) console.log(`Restoring a stored key failed (HTTP ${status}).`);
     }
-    if (win) await win.loadURL(`${b.origin}/${key !== null ? "?stored=1" : ""}${hash || ""}`);
+    if (win) await win.loadURL(`${b.origin}/${stored.size > 0 ? "?stored=1" : ""}${hash || ""}`);
   } finally {
-    key = null;
+    stored = null;
   }
 }
 
@@ -182,9 +187,9 @@ ipcMain.handle("eco:notify", (event, title, body) => {
   return true;
 });
 
-ipcMain.handle("eco:saveKey", (event, key) => {
+ipcMain.handle("eco:saveKey", (event, name, key) => {
   if (!fromApp(event)) return { stored: false, reason: "not stored: the request did not come from the app page" };
-  const result = lib.saveKeyFile(keyFile(), key, safeStorage);
+  const result = lib.saveNamedKey(keyFile(), name, key, safeStorage);
   if (result.stored && !backend.allowCloud) {  // cloud permission is fixed per backend run
     result.restarting = true;
     scheduleRestart();
@@ -192,10 +197,10 @@ ipcMain.handle("eco:saveKey", (event, key) => {
   return result;
 });
 
-ipcMain.handle("eco:removeKey", (event) => {
+ipcMain.handle("eco:removeKey", (event, name) => {
   if (!fromApp(event)) return { removed: false };
-  const result = lib.removeKeyFile(keyFile());
-  if (backend.allowCloud) {
+  const result = lib.removeNamedKey(keyFile(), name, safeStorage);
+  if (backend.allowCloud && result.removed && result.remaining === 0) {  // cloud goes off with the last key
     result.restarting = true;
     scheduleRestart();
   }

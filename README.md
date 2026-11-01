@@ -125,6 +125,27 @@ python simulate_router.py
 python energy_report.py --price 0.15
 ```
 
+## Desktop app
+
+Run the Eco app in its own window from the repo. It uses the Python in `.venv`:
+
+```powershell
+cd desktop
+npm install
+npm start
+```
+
+Build a Windows installer that needs neither Python nor this folder. It writes `desktop\dist\Eco Setup <version>.exe`:
+
+```powershell
+cd desktop
+npm run dist
+```
+
+The installer is per-user, so it needs no administrator rights, and it installs to `%LOCALAPPDATA%\Programs\Eco`. The installed app keeps its settings, encrypted keys, spend log and verified memory in `%APPDATA%\Eco`; uninstalling leaves that folder in place. `npm start` keeps its own data in `%APPDATA%\pi-edge-router-desktop`. Neither writes to `results/`, so their budgets are separate from `eco_server.py` run by hand.
+
+The installer is not code-signed, so Windows warns about it. On "Windows protected your PC", choose **More info**, check the file is the one you built, then **Run anyway**. Antivirus tools may also flag or slow an unsigned app, in which case restore the file or allow that one file; turn nothing off. The code check runs in a separate process with a time limit, closed stdin and no API key. It is not a real sandbox.
+
 ## Not yet built
 
 - Live gateway

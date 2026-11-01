@@ -320,6 +320,20 @@
   .keystate svg { width: 22px; height: 22px; }
   .keystate.set { color: #fff; background: var(--ink); border-color: var(--ink); }
   .keystate.none { color: var(--muted); border-style: dashed; }
+  .presets { gap: 8px; flex-wrap: wrap; }
+  .presets .ghost-btn[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .keylist { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 10px; }
+  .keyrow { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fff; }
+  .keyhead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .keyhead .keyname { font-weight: 800; overflow-wrap: anywhere; min-width: 0; }
+  .keyhead .keystate { font-size: 0.85rem; padding: 3px 8px; }
+  .keyhead .keystate svg { width: 16px; height: 16px; }
+  .keyhead .ghost-btn { margin-left: auto; }
+  .keyrow .hint { margin: 6px 0 0; }
+  .keyconfirm { margin-top: 10px; padding: 12px; border: 2px solid var(--ink); border-radius: 10px; background: #FBF7EC; }
+  .keyconfirm p { margin: 0 0 10px; }
+  .keypick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-weight: 700; color: var(--ink); }
+  .keypick select { width: auto; min-width: 14em; max-width: 100%; }
   .bigbar { height: 22px; border-radius: 10px; margin: 12px 0 8px; }
   .bstate { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.15rem; padding: 6px 12px; border-radius: 10px; border: 2px solid currentColor; }
   .bstate svg { width: 24px; height: 24px; }
@@ -583,26 +597,38 @@
                 </select>
               </div>
               <div class="fields" id="oaiFields" hidden>
+                <div class="full">
+                  <span class="f" id="presetLabel">Fill in for a provider</span>
+                  <div class="row presets" role="group" aria-labelledby="presetLabel">
+                    <button class="ghost-btn" type="button" data-preset="openai">OpenAI</button>
+                    <button class="ghost-btn" type="button" data-preset="claude">Claude (Anthropic)</button>
+                    <button class="ghost-btn" type="button" data-preset="gemini">Gemini (Google)</button>
+                  </div>
+                  <p class="hint" id="presetNote" hidden></p>
+                </div>
                 <div class="full"><label class="f" for="oaiUrl">Base URL</label><input id="oaiUrl" type="url" class="code" spellcheck="false" autocomplete="off" placeholder="https://api.example.com/v1"></div>
                 <div class="full"><label class="f" for="oaiModel">Model</label><input id="oaiModel" type="text" class="code" spellcheck="false" autocomplete="off" placeholder="model-name"></div>
                 <div><label class="f" for="oaiIn">Price per million input tokens (USD)</label><input id="oaiIn" type="number" min="0" step="0.01" inputmode="decimal" placeholder="1.25"></div>
                 <div><label class="f" for="oaiOut">Price per million output tokens (USD)</label><input id="oaiOut" type="number" min="0" step="0.01" inputmode="decimal" placeholder="4.25"></div>
-                <p class="hint full" style="margin:0">Prices are required so the budget can count this provider's spend.</p>
+                <p class="hint full" style="margin:0">Prices are required so the budget can count this provider's spend. Check the provider's pricing page.</p>
               </div>
-              <div class="row" style="margin-top:16px"><button class="btn" id="saveCloud" type="button">Save cloud settings</button></div>
+              <div class="row" style="margin-top:16px">
+                <button class="btn" id="saveCloud" type="button">Save cloud settings</button>
+                <button class="ghost-btn" id="addCloud" type="button">Add as another cloud rung</button>
+              </div>
               <p class="hint" id="cloudTierNote"></p>
               <div class="msg" id="cloudMsg" role="status"></div>
             </section>
             <section class="card" aria-labelledby="keyTitle">
-              <h2 id="keyTitle">API key</h2>
-              <div class="row"><span class="keystate none" id="keyState"></span></div>
-              <label class="f" for="keyInput" style="margin-top:14px">New key</label>
-              <input id="keyInput" type="password" class="code" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Paste a key">
-              <div class="row" style="margin-top:12px">
-                <button class="btn" id="saveKey" type="button">Save key</button>
-                <button class="ghost-btn" id="removeKey" type="button" style="padding:10px 16px">Remove key</button>
+              <h2 id="keyTitle">Your API keys</h2>
+              <ul class="keylist" id="keyList"></ul>
+              <h3 style="margin:0 0 10px">Add a key</h3>
+              <div class="fields">
+                <div><label class="f" for="keyName">Name</label><input id="keyName" type="text" maxlength="40" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Meta personal"></div>
+                <div><label class="f" for="keyInput">Key</label><input id="keyInput" type="password" class="code" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Paste a key"></div>
               </div>
-              <p class="hint" id="keyWhere">Held in memory for this session only.</p>
+              <div class="row" style="margin-top:12px"><button class="btn" id="saveKey" type="button">Save</button></div>
+              <p class="hint">Use a short label for the name. A key is never shown again after you save it. Choose which rung uses it on the Models screen.</p>
               <div class="msg" id="keyMsg" role="status"></div>
             </section>
           </div>
@@ -662,8 +688,9 @@
 
 <script>
 (() => {
-  // Security notes: the API key is only ever read from #keyInput, sent to /api/key and (if the
+  // Security notes: an API key is only ever read from #keyInput, sent to /api/key and (if the
   // desktop wrapper exists) handed to window.ecoDesktop.saveKey. It is never shown, logged or stored.
+  // The page only ever knows key names.
   const ICON = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>',
     cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -682,7 +709,10 @@
     chip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>',
     key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/></svg>',
   };
-  const HEX = { pi: "#A3173F", pc: "#22A876", cmin: "#3A9AD9", chigh: "#0B3C8C", slate: "#3F4A5A", none: "#B9B8B0" };
+  const HEX = { pi: "#A3173F", pc: "#22A876", slate: "#3F4A5A", none: "#B9B8B0" };
+  // A Meta rung's blue follows its effort, lightest to darkest. Every pair, and each against Pi and PC,
+  // stays clearly apart under simulated red-green and blue-yellow colour blindness. The effort word is on the rung too.
+  const EFFORT_BLUE = { minimal: "#8ECBF1", low: "#2B7FC4", medium: "#15508F", high: "#0A2850" };
   // Extra rung colours: distinct from the tier colours, the amber accent and each other.
   const PALETTE = ["#6A3D9A", "#D55E00", "#CC79A7", "#00727A", "#8C510A", "#6B6B00", "#7F2704", "#4A4E8C"];
   const $ = (id) => document.getElementById(id);
@@ -691,12 +721,24 @@
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const S = {
     eco: true, cloudAllowed: false, memory: false, tasks: [], measuredShare: null, polling: null,
-    settings: null, draft: null, dirty: false, colors: {}, names: {}, budget: null, keySet: false,
-    mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null, keyStored: false,
+    settings: null, draft: null, dirty: false, colors: {}, names: {}, budget: null,
+    keys: [], storedKeys: new Set(), confirmKey: null, preset: null,
+    mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null,
   };
   const desktop = () => (typeof window.ecoDesktop === "object" && window.ecoDesktop) || null;
-  // The desktop app adds ?stored=1 when it restored a key from its encrypted store; ignored in a browser.
-  S.keyStored = !!desktop() && new URLSearchParams(location.search).get("stored") === "1";
+  // The desktop app adds ?stored=1 when it restored keys from its encrypted store; ignored in a browser.
+  const restored = !!desktop() && new URLSearchParams(location.search).get("stored") === "1";
+  // Names of keys the desktop app could not store, so a reload doesn't call them stored. Names only.
+  const SESSION_ONLY = "eco-session-only-keys";
+  function sessionOnly() {
+    try { return new Set(JSON.parse(sessionStorage.getItem(SESSION_ONLY)) || []); } catch (e) { return new Set(); }
+  }
+  function setSessionOnly(name, on) {
+    const names = sessionOnly();
+    if (on) names.add(name); else names.delete(name);
+    try { sessionStorage.setItem(SESSION_ONLY, JSON.stringify([...names])); } catch (e) { /* the page works without it */ }
+  }
+  const nameKey = (name) => name.trim().toLowerCase();
 
   function h(tag, props, ...kids) {
     const e = document.createElement(tag);
@@ -769,13 +811,12 @@
   /* ---------- Tiers, colours, names ---------- */
   function colorsFor(tiers) {
     const map = {}, used = new Set();
-    let clouds = 0;
     for (const t of tiers) {
       let c = null;
       if (t.kind === "local" && t.id === "pi") c = HEX.pi;
       else if (t.kind === "local" && t.id === "pc") c = HEX.pc;
-      else if (t.kind === "cloud") c = [HEX.cmin, HEX.chigh][clouds++] || null;
-      if (!c || used.has(c)) c = PALETTE.find((p) => !used.has(p)) || "#777777";
+      if (t.provider === "meta") c = EFFORT_BLUE[(t.flags && t.flags.effort) || "minimal"] || EFFORT_BLUE.medium;  // same effort, same blue
+      else if (!c || used.has(c)) c = PALETTE.find((p) => !used.has(p)) || "#777777";
       used.add(c);
       map[t.id] = c;
     }
@@ -791,6 +832,8 @@
   const ecoOffTier = () => enabled().find((t) => t.kind === "cloud") || null;
   const nameOf = (id) => id === "memory" ? "Memory" : id === "none" ? "None" : (S.names[id] || id);
   const blocked = () => !!(S.budget && S.budget.level === "blocked");
+  const KEY_WAITS = ["No API key set yet", "Choose a key"];
+  const keyWait = (t) => (t.kind === "cloud" && S.settings.rung_keys[t.id] && S.settings.rung_keys[t.id].reason) || "";
 
   /* ---------- Ladder ---------- */
   const rungEls = {};
@@ -842,9 +885,10 @@
   function idleRung(t) {
     const off = ecoOffTier();
     if (!S.eco && (!off || t.id !== off.id)) return setStep(t.id, "bypassed", "BYPASSED", "skip", "Eco mode is off");
+    if (keyWait(t)) return setStep(t.id, "waiting", "WAITING", "wait", keyWait(t));
     if (t.kind === "cloud" && !S.cloudAllowed) return setStep(t.id, "locked", "LOCKED", "lock", "Cloud disabled on this server");
     if (t.kind === "cloud" && blocked()) return setStep(t.id, "locked", "LOCKED", "lock", budgetLink());
-    setStep(t.id, "waiting", "WAITING", "wait", t.kind === "cloud" && !S.keySet ? "No API key set yet" : "");
+    setStep(t.id, "waiting", "WAITING", "wait", "");
   }
   function resetLadder() {
     memoryIdle();
@@ -881,7 +925,9 @@
                           a.passed ? "All tests passed" : (a.first_failure || a.error || "Tests failed"), a);
       else if (job.current === t.id) setStep(t.id, "running", "RUNNING", "spin", "Generating and testing…");
       else if (job.skipped.includes(t.id)) {
-        if (budgetStop) setStep(t.id, "locked", "LOCKED", "lock", budgetLink());
+        const why = (job.skip_reasons || {})[t.id];
+        if (KEY_WAITS.includes(why)) setStep(t.id, "waiting", "WAITING", "wait", why);
+        else if (budgetStop) setStep(t.id, "locked", "LOCKED", "lock", budgetLink());
         else setStep(t.id, "skipped", "SKIPPED", "lock", job.message || "Skipped");
       }
       else if (solvedAt >= 0 || job.status !== "running") setStep(t.id, "notneeded", "NOT NEEDED", "skip",
@@ -906,7 +952,9 @@
     } else {
       $("summary").textContent = "Nothing was run.";
     }
-    notice(budgetStop ? "Budget limit reached: the cloud rung was skipped. Raise or remove the limit on the Cloud and Budget screen." : job.message);
+    notice(budgetStop ? "Budget limit reached: the cloud rung was skipped. Raise or remove the limit on the Cloud and Budget screen."
+      : KEY_WAITS.includes(job.message) ? `${job.skipped.map(nameOf).join(", ")} waited: ${job.message}. Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
+      : job.message);
   }
 
   /* ---------- Running a task ---------- */
@@ -1029,7 +1077,7 @@
       $("localShare").textContent = pct.toFixed(1) + "%";
       $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved by the local rungs alone (Pi or PC).`;
       const rows = [
-        [HEX.cmin, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
+        [EFFORT_BLUE.minimal, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
         ["#C98500", `PC then cloud, minimal (${m.pc_then_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.pc_then_cloud_minimal.cost_usd)],
       ];
       const table = $("compare");
@@ -1098,7 +1146,6 @@
   /* ---------- Settings ---------- */
   function applySettings(view) {
     S.settings = view;
-    S.keySet = view.key_set;
     S.colors = colorsFor(view.tiers);
     S.names = Object.fromEntries(view.tiers.map((t) => [t.id, t.name]));
     if (!S.dirty) S.draft = clone(view.tiers);
@@ -1107,7 +1154,7 @@
     modeLine();
     renderRungList();
     fillCloudForm();
-    renderKey();
+    loadKeys();
   }
   async function loadSettings() {
     try { applySettings(await getJSON("/api/settings")); }
@@ -1167,6 +1214,23 @@
     } catch (e) { const m = h("div", { class: "msg" }); out.append(m); showMsg(m, "error", "Could not probe:", e.message); }
     btn.disabled = false; btn.textContent = "Probe";
   }
+  /* The Key dropdown of a cloud rung. Names only; a name with no key stays selected, marked as not set. */
+  function keyPicker(t) {
+    const names = S.settings.key_names;
+    const known = t.key_name ? names.find((n) => nameKey(n) === nameKey(t.key_name)) : null;
+    const auto = !names.length ? "No key yet" : names.length === 1 ? `Automatic (${names[0]})` : "Choose a key";
+    const sel = h("select", { "aria-label": `API key for ${t.name}` },
+      h("option", { value: "" }, auto),
+      ...names.map((n) => h("option", { value: n }, n)),
+      t.key_name && !known ? h("option", { value: t.key_name }, `${t.key_name} (not set)`) : null);
+    sel.value = known || t.key_name || "";
+    sel.addEventListener("change", () => {
+      if (sel.value) t.key_name = sel.value; else delete t.key_name;
+      S.dirty = true;
+      dirtyFlag();
+    });
+    return h("label", { class: "keypick" }, "Key", sel);
+  }
   function renderRungList() {
     const list = $("rungList");
     if (!S.draft) return;
@@ -1189,7 +1253,7 @@
       const where = t.kind === "cloud" ? (t.provider === "meta" ? "cloud · Meta (tested)" : "cloud · OpenAI-compatible (untested)") : "local";
       list.append(h("li", { class: "rung-row" + (t.enabled ? "" : " off"), style: `--c:${colors[t.id]}` },
         h("span", { class: "pos" }, t.enabled ? `Rung ${++pos}` : "Off"),
-        nameInput, h("div", { class: "meta" }, `${where} · ${hwLine(t)}`),
+        nameInput, h("div", { class: "meta" }, `${where} · ${hwLine(t)}`, t.kind === "cloud" ? keyPicker(t) : null),
         h("div", { class: "acts" }, sw, up, down, rm)));
     });
     if (!S.draft.length) list.append(h("li", { class: "empty-ladder" }, "No rungs. Detect a model or add a machine by address."));
@@ -1215,38 +1279,92 @@
 
   /* ---------- Cloud and Budget screen ---------- */
   function cloudTier(tiers) { return tiers.find((t) => t.kind === "cloud") || null; }
+  // Base URLs and models from each provider's own documentation. No prices: they change, so people check them.
+  const PRESETS = {
+    openai: {
+      name: "OpenAI",
+      base_url: "https://api.openai.com/v1",
+      model: "gpt-6.1-terra",
+      key_name: "OpenAI key",
+      flags: {"max_tokens_field": "max_completion_tokens", "omit_temperature": true},
+      note: "Untested. OpenAI recommends its Responses API for new projects; this app uses Chat Completions."
+    },
+    claude: {
+      name: "Claude (Anthropic)",
+      base_url: "https://api.anthropic.com/v1",
+      model: "claude-sonnet-5-5",
+      key_name: "Claude key",
+      flags: {"omit_temperature": true},
+      note: "Untested. Anthropic describes this compatibility layer as meant for testing and comparing models, not long-term production use."
+    },
+    gemini: {
+      name: "Gemini (Google)",
+      base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "gemini-3.8-flash",
+      key_name: "Gemini key",
+      flags: {},
+      note: "Untested. Google says its support for the OpenAI libraries is still in beta."
+    }
+  };
+  function showPreset(id) {
+    document.querySelectorAll("[data-preset]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.preset === id)));
+    const note = $("presetNote");
+    note.hidden = !id;
+    note.textContent = id ? PRESETS[id].note : "";
+  }
+  function fillPreset(id) {
+    const p = PRESETS[id];
+    S.preset = id;  // filled in but not saved yet: fillCloudForm leaves the form alone until it is
+    showPreset(id);
+    $("oaiUrl").value = p.base_url;
+    $("oaiModel").value = p.model;
+    $("oaiIn").value = "";
+    $("oaiOut").value = "";
+    $("oaiIn").placeholder = "";
+    $("oaiOut").placeholder = "";
+    // A suggestion for the Add a key form; the key itself is still typed there.
+    const typed = $("keyName").value.trim();
+    if (!typed || Object.values(PRESETS).some((x) => x.key_name === typed)) $("keyName").value = p.key_name;
+    showMsg($("cloudMsg"), "ok", `${p.name} filled in.`, "Add the prices from the provider's pricing page, save, then add a key with the name suggested below.");
+  }
   function setProvider(p) {
     $("provMeta").checked = p === "meta";
     $("provOai").checked = p === "openai_compatible";
     $("metaFields").hidden = p !== "meta";
     $("oaiFields").hidden = p !== "openai_compatible";
+    if (p === "meta") { S.preset = null; showPreset(null); }
   }
   function fillCloudForm() {
     const t = cloudTier(S.settings.tiers);
     const meta = cloudTier(S.settings.defaults) || {};
     $("metaInfo").textContent = `${host(meta.base_url || "")} · ${meta.model || ""}`;
-    setProvider(t ? t.provider : "meta");
-    $("effort").value = (t && t.provider === "meta" && t.flags.effort) || "minimal";
-    if (t && t.provider === "openai_compatible") {
-      $("oaiUrl").value = t.base_url; $("oaiModel").value = t.model;
-      $("oaiIn").value = t.price_in_per_m; $("oaiOut").value = t.price_out_per_m;
+    if (!S.preset) {
+      setProvider(t ? t.provider : "meta");
+      $("effort").value = (t && t.provider === "meta" && t.flags.effort) || "minimal";
+      if (t && t.provider === "openai_compatible") {
+        $("oaiUrl").value = t.base_url; $("oaiModel").value = t.model;
+        $("oaiIn").value = t.price_in_per_m; $("oaiOut").value = t.price_out_per_m;
+        showPreset(Object.keys(PRESETS).find((id) => PRESETS[id].base_url === t.base_url) || null);
+      }
     }
     $("cloudTierNote").textContent = !t ? "There is no cloud rung yet. Saving adds one at the end of the ladder."
       : !t.enabled ? "The cloud rung is turned off on the Models screen." : "";
     $("cloudLead").textContent = "The cloud rung is the last resort: it runs only when every local rung has failed the tests."
-      + (S.cloudAllowed ? "" : " Cloud calls are disabled on this server; start it with ALLOW_CLOUD=1 to allow them.");
+      + (S.cloudAllowed ? "" : desktop() ? " Cloud calls are off until a key is stored on this computer."
+                                         : " Cloud calls are disabled on this server; start it with ALLOW_CLOUD=1 to allow them.");
   }
-  async function saveCloud() {
+  async function saveCloud(asNew) {
     const msg = $("cloudMsg");
     const tiers = clone(S.settings.tiers);
-    const i = tiers.findIndex((t) => t.kind === "cloud");
+    const i = asNew ? -1 : tiers.findIndex((t) => t.kind === "cloud");
     const prev = i >= 0 ? tiers[i] : null;
+    const preset = S.preset ? PRESETS[S.preset] : null;
     const prov = $("provOai").checked ? "openai_compatible" : "meta";
     let tier;
     if (prov === "meta") {
       const meta = cloudTier(S.settings.defaults);
       const keep = prev && prev.provider === "meta";
-      tier = { id: prev ? prev.id : uniqueId("cloud", tiers), name: keep ? prev.name : meta.name, kind: "cloud", provider: "meta",
+      tier = { id: prev ? prev.id : uniqueId("cloud", tiers), name: keep ? prev.name : asNew ? `${meta.name} ${$("effort").value}` : meta.name, kind: "cloud", provider: "meta",
                base_url: keep ? prev.base_url : meta.base_url, model: keep ? prev.model : meta.model,
                flags: { effort: $("effort").value }, enabled: prev ? prev.enabled : true };
     } else {
@@ -1255,81 +1373,123 @@
         .filter(([id]) => !$(id).value.trim()).map(([, label]) => label);
       if (missing.length) return showMsg(msg, "error", "Not saved:", `please fill in the ${missing.join(", ")}`);
       const keep = prev && prev.provider === "openai_compatible";
-      tier = { id: prev ? prev.id : uniqueId("cloud", tiers), name: keep ? prev.name : "OpenAI-compatible cloud", kind: "cloud",
-               provider: "openai_compatible", base_url: $("oaiUrl").value.trim(), model: $("oaiModel").value.trim(), flags: {},
+      const name = preset ? preset.name : keep ? prev.name : "OpenAI-compatible cloud";
+      tier = { id: prev ? prev.id : uniqueId(name, tiers), name, kind: "cloud",
+               provider: "openai_compatible", base_url: $("oaiUrl").value.trim(), model: $("oaiModel").value.trim(),
+               flags: preset ? clone(preset.flags) : keep ? clone(prev.flags) : {},
                enabled: prev ? prev.enabled : true, price_in_per_m: num($("oaiIn").value), price_out_per_m: num($("oaiOut").value) };
     }
+    // A key only follows a rung to the same service. A preset names its own key, so that it can never
+    // pick up the only key there is, which belongs to some other provider, and send it there.
+    if (prov !== "meta" && preset) tier.key_name = preset.key_name;
+    else if (prev && prev.key_name && host(prev.base_url) === host(tier.base_url)) tier.key_name = prev.key_name;
     if (i >= 0) tiers[i] = tier; else tiers.push(tier);
     try {
       const view = await post("/api/settings", { tiers });
+      S.preset = null;
       if (S.dirty) {  // keep unsaved Models edits, with the new cloud rung in them
         const j = S.draft.findIndex((t) => t.id === tier.id);
         if (j >= 0) S.draft[j] = clone(tier); else S.draft.push(clone(tier));
       }
       applySettings(view);
-      showMsg(msg, "ok", "Saved.", prov === "meta" ? `Meta Muse Spark at ${tier.flags.effort} effort.` : "OpenAI-compatible provider (untested).");
+      showMsg(msg, "ok", asNew ? "Added as a new rung." : "Saved.", prov === "meta" ? `Meta Muse Spark at ${tier.flags.effort} effort.`
+        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}.` : `${tier.name} (untested).`);
     } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
-  function renderKey() {
-    const k = $("keyState");
-    k.className = "keystate " + (S.keySet ? "set" : "none");
-    k.replaceChildren(icon(S.keySet ? "key" : "skip"), h("span", null, S.keySet ? "Key set" : "No key"));
-    $("removeKey").disabled = !S.keySet;
-    $("keyWhere").textContent = S.keySet && S.keyStored
-      ? "Stored encrypted on this computer." : "Held in memory for this session only.";
+  const REMOVE_WARNING = "Remove this key from the app? This does not cancel it at the provider; to revoke it, do that on the provider's site.";
+  function renderKeys() {
+    const list = $("keyList");
+    list.replaceChildren();
+    if (!S.keys.length) {
+      list.append(h("li", { class: "empty-ladder" }, "No keys yet. Add one below."));
+      return;
+    }
+    for (const k of S.keys) {
+      const uses = k.rungs.length ? `Used by: ${k.rungs.join(", ")}` : "Not used by any rung yet";
+      const asking = S.confirmKey === k.name;
+      list.append(h("li", { class: "keyrow" },
+        h("div", { class: "keyhead" },
+          h("span", { class: "keyname" }, k.name),
+          h("span", { class: "keystate set" }, icon("key"), h("span", null, "Key set")),
+          h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${k.name}`, "aria-expanded": String(asking),
+                        onclick: () => { S.confirmKey = asking ? null : k.name; renderKeys(); } }, "Remove")),
+        h("p", { class: "hint" }, uses),
+        h("p", { class: "hint" }, S.storedKeys.has(nameKey(k.name)) ? "Stored encrypted on this computer" : "Held in memory for this session only"),
+        asking ? h("div", { class: "keyconfirm" },
+          h("p", null, REMOVE_WARNING),
+          k.rungs.length ? h("p", null, h("b", null, "Rungs affected: "), `${k.rungs.join(", ")} will wait for a key.`) : null,
+          h("div", { class: "row" },
+            h("button", { class: "btn", type: "button", onclick: () => removeKey(k) }, "Remove this key"),
+            h("button", { class: "ghost-btn", type: "button", onclick: () => { S.confirmKey = null; renderKeys(); } }, "Keep it"))) : null));
+    }
+  }
+  function showKeys(keys) {
+    S.keys = keys;
+    if (restored) {
+      const only = sessionOnly();
+      for (const k of keys) if (!only.has(nameKey(k.name))) S.storedKeys.add(nameKey(k.name));
+    }
+    renderKeys();
   }
   async function saveKey() {
-    const input = $("keyInput"), msg = $("keyMsg");
+    const input = $("keyInput"), nameInput = $("keyName"), msg = $("keyMsg");
+    const name = nameInput.value.trim();
+    if (!name) return showMsg(msg, "error", "No name:", "give this key a short label, such as Meta personal");
     let key = input.value;
     input.value = "";  // cleared at once; the key is never shown again
     if (!key) return showMsg(msg, "error", "No key:", "paste a key into the field first");
     try {
-      const r = await post("/api/key", { key });
-      S.keySet = r.set;
+      const r = await post("/api/key", { name, key });
+      nameInput.value = "";
       const d = desktop();
       if (d && typeof d.saveKey === "function") {
         let res = null;
-        try { res = await d.saveKey(key); } catch (e) { /* reported below */ }
-        S.keyStored = !!(res && res.stored === true);
-        if (S.keyStored) {
-          showMsg(msg, "ok", "Key set.", res.restarting
+        try { res = await d.saveKey(name, key); } catch (e) { /* reported below */ }
+        const stored = !!(res && res.stored === true);
+        setSessionOnly(nameKey(name), !stored);
+        if (stored) {
+          S.storedKeys.add(nameKey(name));
+          showMsg(msg, "ok", "Key saved.", res.restarting
             ? "Stored encrypted on this computer. Restarting the local server to allow cloud calls…"
             : "Stored encrypted on this computer. It is not shown again.");
         } else {
-          showMsg(msg, "error", "Key set for this session only:", (res && res.reason) || "the desktop app could not store it.");
+          S.storedKeys.delete(nameKey(name));
+          showMsg(msg, "error", "Key saved for this session only:", (res && res.reason) || "the desktop app could not store it.");
         }
       } else {
-        showMsg(msg, "ok", "Key set.", "It is not shown again.");
+        showMsg(msg, "ok", "Key saved.", "It is not shown again.");
       }
+      showKeys(r.keys);
+      await loadSettings();
     } catch (e) { showMsg(msg, "error", "Key not saved:", e.message); }
     key = "";
-    renderKey();
-    if (!S.running) resetLadder();
   }
-  async function removeKey() {
+  async function removeKey(k) {
     const msg = $("keyMsg");
+    const after = k.rungs.length ? `${k.rungs.join(", ")} will wait for a key.` : "No rung was using it.";
+    S.confirmKey = null;
     try {
-      const r = await post("/api/key", { key: null });
-      S.keySet = r.set;
-      showMsg(msg, "ok", "Key removed.", "Cloud rungs cannot run until a new key is set.");
+      const r = await post("/api/key/remove", { name: k.name });
+      showMsg(msg, "ok", "Key removed.", after);
+      showKeys(r.keys);
     } catch (e) { showMsg(msg, "error", "Could not remove the key:", e.message); }
     const d = desktop();
     if (d && typeof d.removeKey === "function") {  // the stored copy goes too, even if the server call failed
       let res = null;
-      try { res = await d.removeKey(); } catch (e) { /* reported below */ }
+      try { res = await d.removeKey(k.name); } catch (e) { /* reported below */ }
       if (res && res.removed) {
-        S.keyStored = false;
-        if (res.restarting) showMsg(msg, "ok", "Key removed.", "Deleted from this computer. Restarting the local server without cloud calls…");
+        S.storedKeys.delete(nameKey(k.name));
+        setSessionOnly(nameKey(k.name), false);
+        if (res.restarting) showMsg(msg, "ok", "Key removed.", `${after} Deleted from this computer. Restarting the local server without cloud calls…`);
       } else {
         showMsg(msg, "error", "Could not delete the stored key:", "the desktop app did not confirm it.");
       }
     }
-    renderKey();
-    if (!S.running) resetLadder();
+    renderKeys();
+    await loadSettings();
   }
-  async function loadKey() {
-    try { S.keySet = (await getJSON("/api/key/status")).set; } catch (e) { /* keep the last known state */ }
-    renderKey();
+  async function loadKeys() {
+    try { showKeys((await getJSON("/api/key/status")).keys); } catch (e) { /* keep the last known state */ }
   }
 
   /* ---------- Budget ---------- */
@@ -1411,10 +1571,11 @@
   $("saveLadder").addEventListener("click", saveLadder);
   $("provMeta").addEventListener("change", () => setProvider("meta"));
   $("provOai").addEventListener("change", () => setProvider("openai_compatible"));
-  $("saveCloud").addEventListener("click", saveCloud);
+  $("saveCloud").addEventListener("click", () => saveCloud(false));
+  $("addCloud").addEventListener("click", () => saveCloud(true));
+  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => fillPreset(b.dataset.preset)));
   $("saveKey").addEventListener("click", saveKey);
   $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveKey(); });
-  $("removeKey").addEventListener("click", removeKey);
   $("saveBudget").addEventListener("click", saveBudget);
 
   showScreen();

@@ -6,9 +6,46 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test"
+    "test": "node --test",
+    "dist": "..\\.venv\\Scripts\\python.exe ../build_backend.py && electron-builder --win nsis --x64"
   },
   "devDependencies": {
-    "electron": "45.2.1"
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "pi-edge-router.eco",
+    "productName": "Eco",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "lib.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/eco-backend",
+        "to": "backend"
+      },
+      {
+        "from": "../assets",
+        "to": "assets",
+        "filter": [
+          "icon.ico",
+          "icon.png"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "../assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
   }
 }

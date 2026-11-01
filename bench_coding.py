@@ -116,7 +116,41 @@ def extract_code(text):
     return (m.group(1) if m else text).strip()
 
 
-def run_tests(code, task):
+def _checker_env():
+    """The checker child's environment: the API key never reaches the process running model code."""
+    return {k: v for k, v in os.environ.items() if k.upper() != "MODEL_API_KEY"}
+
+
+def _check_command(script):
+    """In the installed app sys.executable is the bundled backend, which acts as the child when told to."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--eco-check", script]
+    return [sys.executable, "-I", script]
+
+
+def _spawn_check(script, cwd, timeout):
+    """Run script in a separate `python -I`: stdin closed, time limit, no API key.
+
+    stdin must stay closed: on Windows a child that inherits a pipe which another thread here is
+    reading blocks during Python startup until that read ends (the desktop app's watchdog did that).
+    """
+    return subprocess.run(_check_command(script), cwd=cwd, stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          env=_checker_env(), timeout=timeout)
+
+
+def _timed_out(timeout):
+    return f"timed out after {timeout} s (an infinite loop?)"
+
+
+def _exit_reason(p):
+    """A checker child that ended without a result: its exit status and the end of its stderr."""
+    tail = p.stderr.strip()[-200:]
+    return f"the check exited with status {p.returncode}" + (f": {tail}" if tail else " and no output")
+
+
+def run_tests(code, task, timeout=CHECK_TIMEOUT):
+    """Returns {"passed", "total", "fails"}, or {"error", "first_failure"} when there is no result."""
     for bad in BLOCKED:
         if bad in code:
             return {"error": "blocked: " + bad}
@@ -128,17 +162,18 @@ def run_tests(code, task):
         with open(os.path.join(tmp, "harness.py"), "w", encoding="utf-8") as f:
             f.write(HARNESS)
         try:
-            p = subprocess.run([sys.executable, "-I", "harness.py"], cwd=tmp,
-                               capture_output=True, text=True, timeout=10)
+            p = _spawn_check("harness.py", tmp, timeout)
         except subprocess.TimeoutExpired:
-            return {"error": "timeout"}
+            return {"error": "timeout", "first_failure": _timed_out(timeout)}
+        except OSError as e:
+            return {"error": "check did not start", "first_failure": f"the check could not start: {e}"}
         lines = p.stdout.strip().splitlines()
         if not lines:
-            return {"error": "no output: " + p.stderr.strip()[-200:]}
+            return {"error": f"check exited ({p.returncode})", "first_failure": _exit_reason(p)}
         try:
             return json.loads(lines[-1])
         except ValueError:
-            return {"error": "bad output"}
+            return {"error": "bad output", "first_failure": _exit_reason(p)}
 
 
 CUSTOM_FILE = "custom_check.py"
@@ -193,12 +228,11 @@ def run_custom_tests(code, tests_code, timeout=CHECK_TIMEOUT):
         with open(os.path.join(tmp, CUSTOM_FILE), "w", encoding="utf-8") as f:
             f.write(source)
         try:
-            p = subprocess.run([sys.executable, "-I", CUSTOM_FILE], cwd=tmp, stdin=subprocess.DEVNULL,
-                               capture_output=True, text=True, encoding="utf-8", errors="replace",
-                               timeout=timeout)
+            p = _spawn_check(CUSTOM_FILE, tmp, timeout)
         except subprocess.TimeoutExpired:
-            return {"passed": False, "error": "timeout",
-                    "first_failure": f"timed out after {timeout} s (an infinite loop?)"}
+            return {"passed": False, "error": "timeout", "first_failure": _timed_out(timeout)}
+        except OSError as e:
+            return {"passed": False, "error": "check did not start", "first_failure": f"the check could not start: {e}"}
     finished = p.stdout.rstrip().endswith(marker)
     if p.returncode == 0 and finished:
         return {"passed": True, "error": "", "first_failure": ""}

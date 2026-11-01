@@ -26,8 +26,12 @@ CLOUD_IN_PER_M = 1.25   # USD per million input tokens, same price as bench_codi
 CLOUD_OUT_PER_M = 4.25  # USD per million output tokens
 LOCAL_PORTS = {11434: "Ollama", 8080: "llama.cpp", 8081: "llama.cpp", 1234: "LM Studio"}
 CLOUD_OFF_REASON = "cloud disabled (ALLOW_CLOUD is not 1)"
+NO_KEY_REASON = "No API key set yet"
+CHOOSE_KEY_REASON = "Choose a key"
 LOCAL_MAX_TOKENS = 500   # same as bench_coding.ask_pi / ask_pc
-CLOUD_MAX_TOKENS = 1500  # openai_compatible cloud tiers; router.CLOUD_MAX_OUTPUT_TOKENS
+# openai_compatible cloud tiers only; Meta rungs have their own limit. Reasoning counts against it, and
+# a cut-off answer is paid for and useless. 25,000 is what OpenAI's reasoning guide says to reserve.
+CLOUD_MAX_TOKENS = 25_000
 CUSTOM_PROMPT_MAX = 4_000   # characters
 CUSTOM_TESTS_MAX = 10_000   # characters
 
@@ -40,6 +44,8 @@ class Tier:
     # (text, in_tokens, out_tokens, cost) when token counts are known.
     ask: Callable
     cost_per_call: float = 0.0
+    # Why this cloud tier can't run yet (no usable API key). It is skipped, not failed.
+    wait_reason: str = ""
 
 
 def default_tiers():
@@ -61,14 +67,18 @@ _CLOUD_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def ask_openai_chat(base_url, model, prompt, disable_thinking=False, key=None, max_tokens=LOCAL_MAX_TOKENS,
-                    price_in_per_m=0.0, price_out_per_m=0.0, local=True, timeout=600):
+                    price_in_per_m=0.0, price_out_per_m=0.0, local=True, timeout=600,
+                    omit_temperature=False, max_tokens_field="max_tokens"):
     """POST {base_url}/chat/completions on any OpenAI-compatible server (llama.cpp, Ollama, LM Studio).
 
     Same body, timeout and bookkeeping as bench_coding.ask_pi/ask_pc, plus the model name.
     disable_thinking sends chat_template_kwargs enable_thinking=false, exactly like ask_pc.
+    omit_temperature and max_tokens_field are for cloud services that reject temperature 0 or
+    the max_tokens field. If the limit cut the answer off, the reply carries a note saying so.
     """
-    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": max_tokens, "temperature": 0}
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}], max_tokens_field: max_tokens}
+    if not omit_temperature:
+        body["temperature"] = 0
     if disable_thinking:
         body["chat_template_kwargs"] = {"enable_thinking": False}
     headers = {"Content-Type": "application/json"}
@@ -81,14 +91,34 @@ def ask_openai_chat(base_url, model, prompt, disable_thinking=False, key=None, m
         data = json.loads(r.read().decode("utf-8"))
     usage = data.get("usage") or {}
     tin, tout = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
-    return {"text": data["choices"][0]["message"]["content"],
-            "seconds": time.time() - start,
-            "in_tokens": tin,
-            "out_tokens": tout,
-            "cost": tin * price_in_per_m / 1e6 + tout * price_out_per_m / 1e6}
+    choice = data["choices"][0]
+    reply = {"text": choice["message"].get("content") or "",  # a model can spend its whole limit thinking
+             "seconds": time.time() - start,
+             "in_tokens": tin,
+             "out_tokens": tout,
+             "cost": tin * price_in_per_m / 1e6 + tout * price_out_per_m / 1e6}
+    if choice.get("finish_reason") == "length":
+        reply["note"] = f"the answer was cut off at the {max_tokens}-token limit"
+    return reply
 
 
-def tier_from_config(cfg, key="", allow_cloud=None):
+def key_name_for_tier(cfg, keys):
+    """(the name of the key this cloud tier uses or None, why it has none or "").
+
+    keys is {name: key}. A tier with a key_name only ever uses that key, ignoring case: if it was
+    removed the tier waits, it never falls back to another. A tier with no key_name uses the only
+    key if there is exactly one.
+    """
+    wanted = cfg.get("key_name")
+    if wanted:
+        found = next((n for n in keys if n.casefold() == wanted.casefold()), None)
+        return found, "" if found else NO_KEY_REASON
+    if len(keys) == 1:
+        return next(iter(keys)), ""
+    return None, CHOOSE_KEY_REASON if keys else NO_KEY_REASON
+
+
+def tier_from_config(cfg, key="", allow_cloud=None, wait_reason=""):
     """One Tier from a settings entry (see settings.py). Tier.name is the settings id."""
     flags = cfg.get("flags", {})
     if cfg["kind"] == "local":
@@ -110,13 +140,28 @@ def tier_from_config(cfg, key="", allow_cloud=None):
             return ask_openai_chat(cfg["base_url"], cfg["model"], prompt,
                                    disable_thinking=flags.get("disable_thinking", False), key=key,
                                    max_tokens=CLOUD_MAX_TOKENS, price_in_per_m=cfg["price_in_per_m"],
-                                   price_out_per_m=cfg["price_out_per_m"], local=False)
-    return Tier(cfg["id"], cfg["kind"], ask)
+                                   price_out_per_m=cfg["price_out_per_m"], local=False,
+                                   omit_temperature=flags.get("omit_temperature", False),
+                                   max_tokens_field=flags.get("max_tokens_field", "max_tokens"))
+    return Tier(cfg["id"], cfg["kind"], ask, wait_reason=wait_reason)
 
 
-def build_tiers(config, key="", allow_cloud=None):
-    """The enabled tiers of a settings dict, in order."""
-    return [tier_from_config(t, key, allow_cloud) for t in config["tiers"] if t.get("enabled", True)]
+def build_tiers(config, key="", allow_cloud=None, keys=None):
+    """The enabled tiers of a settings dict, in order.
+
+    keys ({name: key}) gives each cloud tier only its own key, and a local tier none. Without keys,
+    every cloud tier gets key.
+    """
+    tiers = []
+    for t in config["tiers"]:
+        if not t.get("enabled", True):
+            continue
+        if keys is None or t["kind"] != "cloud":
+            tiers.append(tier_from_config(t, key if keys is None else "", allow_cloud))
+        else:
+            name, reason = key_name_for_tier(t, keys)
+            tiers.append(tier_from_config(t, keys[name] if name else "", allow_cloud, reason))
+    return tiers
 
 
 def check(code, task):
@@ -131,8 +176,14 @@ def check_detail(code, task):
     if task.get("tests_code") is not None:
         r = bench_coding.run_custom_tests(code, task["tests_code"])
         return r["passed"], r["error"], r["first_failure"]
-    ok, error = check(code, task)
-    return ok, error, ""
+    result = bench_coding.run_tests(code, task)
+    error = result.get("error", "")
+    ok = not error and result.get("passed", 0) == result.get("total", len(task["tests"]))
+    first = result.get("first_failure", "")
+    if not ok and not first and result.get("fails"):
+        args, expected, got = result["fails"][0]
+        first = f"{result.get('passed', 0)} of {result.get('total', 0)} tests passed; input={args} expected={expected} got={got}"[:300]
+    return ok, error, first
 
 
 def custom_prompt(prompt):
@@ -200,6 +251,7 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
         task_id = custom_task_id(prompt, entry, tests_code)
     attempts, skipped = [], []
     skip_reason = ""
+    skip_reasons = {}
     solved_by = None
     passing_code = None
 
@@ -218,7 +270,7 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
                 attempt.update(memory="hit", passed=True, stored_tier=stored.get("tier"))
             else:
                 attempt["error"] = "stored answer failed the re-check" + (f": {error}" if error else "")
-                if custom:
+                if custom or first:
                     attempt["first_failure"] = first
         attempt["seconds"] = round(time.time() - start, 2)
         attempts.append(attempt)
@@ -230,10 +282,12 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
     for tier in tiers if solved_by is None else []:
         if tier.kind == "cloud":
             pending = sum(a["cost_usd"] for a in attempts if a.get("kind") == "cloud")
-            reason = CLOUD_OFF_REASON if not allow_cloud else (cloud_check(pending) if cloud_check else "")
+            reason = CLOUD_OFF_REASON if not allow_cloud else (
+                tier.wait_reason or (cloud_check(pending) if cloud_check else ""))
             if reason:
                 skipped.append(tier.name)
                 skip_reason = skip_reason or reason
+                skip_reasons[tier.name] = tier.wait_reason or reason
                 continue
         if on_start:
             on_start(tier.name)
@@ -259,7 +313,9 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
             attempt["cost_usd"] = tier.cost_per_call
         code = bench_coding.extract_code(text)
         attempt["passed"], attempt["error"], first = check_detail(code, task)
-        if custom:
+        if not attempt["passed"] and isinstance(reply, dict) and reply.get("note"):
+            first = reply["note"]
+        if custom or first:
             attempt["first_failure"] = first
         attempt["seconds"] = round(time.time() - start, 2)
         attempts.append(attempt)
@@ -287,6 +343,7 @@ def solve(prompt, tests, entry, tiers, task_id=None, log_path=LOG_PATH,
     }
     if skipped:
         out["skip_reason"] = skip_reason
+        out["skip_reasons"] = skip_reasons
     write_log(out, log_path, secrets)
     return out
 

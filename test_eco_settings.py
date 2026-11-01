@@ -437,7 +437,7 @@ class SettingsServerTests(ServerCase):
         self.addCleanup(cloud_srv.close)
         self.addCleanup(local_srv.close)
         self.start(allow_cloud=True)
-        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"set": False})
+        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"keys": []})
         for bad in ({"key": "short"}, {"key": 12345678}, {"key": "has a space in it"}, {"value": FAKE_KEY}):
             status, text = self.request("/api/key", bad)
             self.assertEqual(status, 400)
@@ -478,7 +478,7 @@ class SettingsServerTests(ServerCase):
             self.assertNotIn("SENTINEL", text)
 
         self.assertEqual(self.post("/api/key", {"key": None})[1], {"set": False})
-        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"set": False})
+        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"keys": []})
 
     def test_blocked_budget_stops_the_cloud_and_says_why(self):
         pi, pi_calls = fake("pi", BAD)
@@ -532,7 +532,7 @@ class SettingsServerTests(ServerCase):
             self.assertEqual(self.request(path, body, evil)[0], 403, path)
             self.assertEqual(self.request(path, body, {"Host": "evil.example"})[0], 403, path)
             self.assertEqual(self.request(path, body, {"Host": "127.0.0.1:1"})[0], 403, path)
-        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"set": False})
+        self.assertEqual(json.loads(self.request("/api/key/status")[1]), {"keys": []})
         self.assertFalse(os.path.exists(os.path.join(self.data_dir, "settings.json")))
 
 
