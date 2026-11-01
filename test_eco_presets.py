@@ -214,7 +214,30 @@ class PagePresets(unittest.TestCase):
 
     def test_the_page_uses_the_same_key_rule_as_the_backend(self):
         self.assertIn(f'const DEFAULT_META_HOST = "{eco_core.DEFAULT_META_HOST}";', self.page)
-        self.assertIn("names.length === 1 && mayUseOnlyKey(t) ? `Automatic (${names[0]})` : \"Choose a key\"", self.page)
+        self.assertIn("metaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${metaKeys()[0]})` : \"Choose a key\"", self.page)
+        self.assertIn(f'const META_KEY_REFUSAL = "{eco_core.META_KEY_REFUSAL}";', self.page)
+
+    def test_the_provider_labels_are_the_same_everywhere(self):
+        select = re.search(r'<select id="keyProvider">(.*?)</select>', self.page).group(1)
+        self.assertEqual(tuple(re.findall(r"<option>(.*?)</option>", select)), eco_core.KEY_PROVIDERS)
+        self.assertEqual(eco_core.KEY_PROVIDERS[0], "Meta", "the form's default")
+        with open(os.path.join(os.path.dirname(PAGE), "..", "desktop", "lib.js"), encoding="utf-8") as f:
+            line = re.search(r"const KEY_PROVIDERS = \[(.*?)\];", f.read()).group(1)
+        self.assertEqual(tuple(json.loads(f"[{line}]")), eco_core.KEY_PROVIDERS)
+
+    def test_the_key_prefixes_are_the_same_everywhere_and_never_a_bare_sk(self):
+        with open(os.path.join(os.path.dirname(PAGE), "..", "desktop", "lib.js"), encoding="utf-8") as f:
+            sources = [self.page, f.read()]
+        for source in sources:
+            table = json.loads(re.search(r"const KEY_PREFIXES = (\[\[.*?\]\]);", source).group(1))
+            self.assertEqual(tuple(map(tuple, table)), eco_core.KEY_PREFIXES)
+        self.assertNotIn("sk-", [prefix for prefix, _ in eco_core.KEY_PREFIXES])
+        self.assertFalse([p for p, _ in eco_core.KEY_PREFIXES if len(p) < 4], "only distinctive prefixes")
+
+    def test_each_preset_button_preselects_its_own_provider(self):
+        for preset in self.presets.values():
+            self.assertIn(preset["name"], eco_core.KEY_PROVIDERS)
+        self.assertIn('$("keyProvider").value = p.name;', self.page)
 
     def test_flags_match_what_the_docs_say(self):
         self.assertTrue(self.presets["claude"]["flags"]["omit_temperature"], "Claude refuses temperature below 1")

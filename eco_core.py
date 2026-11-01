@@ -31,6 +31,12 @@ NO_KEY_REASON = "No API key set yet"
 CHOOSE_KEY_REASON = "Choose a key"
 DEFAULT_KEY_NAME = "Default"  # a key with no name: MODEL_API_KEY, or the old {"key": ...} request
 DEFAULT_META_HOST = "api.meta.ai"
+META_PROVIDER = "Meta"
+OTHER_PROVIDER = "Other"
+KEY_PROVIDERS = (META_PROVIDER, "OpenAI", "Claude (Anthropic)", "Gemini (Google)", OTHER_PROVIDER)
+META_KEY_REFUSAL = "This rung calls Meta, but that key is for "
+# Only prefixes distinctive of one provider. Never a bare "sk-": Meta's key format is unknown and could start the same way.
+KEY_PREFIXES = (("sk-ant-", "Claude (Anthropic)"), ("sk-proj-", "OpenAI"), ("AIza", "Gemini (Google)"), ("gsk_", "Groq"))
 LOCAL_MAX_TOKENS = 500   # same as bench_coding.ask_pi / ask_pc
 # openai_compatible cloud tiers only; Meta rungs have their own limit. Reasoning counts against it, and
 # a cut-off answer is paid for and useless. 25,000 is what OpenAI's reasoning guide says to reserve.
@@ -116,19 +122,73 @@ def may_use_only_key(cfg):
         return False
 
 
-def key_name_for_tier(cfg, keys):
+def key_provider(name, providers=None):
+    """The provider label of a key. A key without one: Default is Meta, the only provider it could
+    have been for when it was stored, and any other name is Other, so it is never used automatically."""
+    label = (providers or {}).get(name)
+    if label:
+        return label
+    return META_PROVIDER if name.casefold() == DEFAULT_KEY_NAME.casefold() else OTHER_PROVIDER
+
+
+def key_label_problem(key, label):
+    """Why this key can't have this label, or "". Other always passes, and so does a key with no known
+    prefix. The message names providers only, never any part of the key."""
+    looks_like = next((provider for prefix, provider in KEY_PREFIXES if key.startswith(prefix)), None)
+    if not looks_like or label in (looks_like, OTHER_PROVIDER):
+        return ""
+    article = "an" if looks_like == "OpenAI" else "a"
+    problem = f"This key looks like {article} {looks_like} key, but it is labelled {label}. Choose the right provider."
+    return problem if looks_like in KEY_PROVIDERS else f"{problem} {looks_like} is not on the list, so choose Other."
+
+
+def stored_key_label(key, label):
+    """The label for a key that was not just chosen by someone: a label its prefix contradicts becomes Other."""
+    return OTHER_PROVIDER if key_label_problem(key, label) else label
+
+
+def calls_meta_host(cfg):
+    """True for any rung on the Meta host, whatever its provider, scheme or port."""
+    try:
+        return (urlsplit(cfg.get("base_url", "")).hostname or "").rstrip(".") == DEFAULT_META_HOST
+    except ValueError:
+        return False
+
+
+def meta_key_refusal(cfg, name, providers=None):
+    """Why this rung may not use the named key, or "". The Meta host only ever gets a Meta key."""
+    provider = key_provider(name, providers)
+    return META_KEY_REFUSAL + provider if calls_meta_host(cfg) and provider != META_PROVIDER else ""
+
+
+def is_key_wait(reason):
+    """True if a skipped rung is only waiting for a usable key."""
+    return reason in (NO_KEY_REASON, CHOOSE_KEY_REASON) or reason.startswith(META_KEY_REFUSAL)
+
+
+def find_key_name(wanted, keys):
+    """The stored name matching wanted, ignoring case, or None."""
+    return next((n for n in keys if n.casefold() == wanted.casefold()), None)
+
+
+def key_name_for_tier(cfg, keys, providers=None):
     """(the name of the key this cloud tier uses or None, why it has none or "").
 
-    keys is {name: key}. A tier with a key_name only ever uses that key, ignoring case: if it was
-    removed the tier waits, it never falls back to another. A tier with no key_name gets no key,
-    except that the default Meta rung uses the only key if there is exactly one.
+    keys is {name: key}, providers is {name: provider label} (see key_provider). A tier with a
+    key_name only ever uses that key, ignoring case: if it was removed the tier waits, it never falls
+    back to another. A tier with no key_name gets no key, except that the default Meta rung uses the
+    only Meta key if there is exactly one. A rung on the Meta host never gets a key for anyone else.
     """
     wanted = cfg.get("key_name")
     if wanted:
-        found = next((n for n in keys if n.casefold() == wanted.casefold()), None)
-        return found, "" if found else NO_KEY_REASON
-    if len(keys) == 1 and may_use_only_key(cfg):
-        return next(iter(keys)), ""
+        found = find_key_name(wanted, keys)
+        if not found:
+            return None, NO_KEY_REASON
+        refusal = meta_key_refusal(cfg, found, providers)
+        return (None, refusal) if refusal else (found, "")
+    meta_keys = [n for n in keys if key_provider(n, providers) == META_PROVIDER]
+    if len(meta_keys) == 1 and may_use_only_key(cfg):
+        return meta_keys[0], ""
     return None, CHOOSE_KEY_REASON if keys else NO_KEY_REASON
 
 
@@ -160,14 +220,15 @@ def tier_from_config(cfg, key="", allow_cloud=None, wait_reason=""):
     return Tier(cfg["id"], cfg["kind"], ask, wait_reason=wait_reason)
 
 
-def build_tiers(config, key="", allow_cloud=None, keys=None):
+def build_tiers(config, key="", allow_cloud=None, keys=None, providers=None):
     """The enabled tiers of a settings dict, in order.
 
     keys ({name: key}) gives each cloud tier only its own key, and a local tier none. A plain key
-    counts as the only key, named Default.
+    counts as the only key, named Default. providers is {name: provider label}.
     """
     if keys is None and key:
         keys = {DEFAULT_KEY_NAME: key}
+        providers = {DEFAULT_KEY_NAME: stored_key_label(key, META_PROVIDER)}
     tiers = []
     for t in config["tiers"]:
         if not t.get("enabled", True):
@@ -175,7 +236,7 @@ def build_tiers(config, key="", allow_cloud=None, keys=None):
         if keys is None or t["kind"] != "cloud":
             tiers.append(tier_from_config(t, "", allow_cloud))
         else:
-            name, reason = key_name_for_tier(t, keys)
+            name, reason = key_name_for_tier(t, keys, providers)
             tiers.append(tier_from_config(t, keys[name] if name else "", allow_cloud, reason))
     return tiers
 

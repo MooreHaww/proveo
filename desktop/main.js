@@ -110,12 +110,12 @@ function stopBackend(b) {
 
 /** Start (or restart) the backend, restore every stored key, and load the app page. */
 async function launch(hash) {
-  let stored = lib.loadKeys(keyFile(), safeStorage);
+  let stored = lib.loadKeyEntries(keyFile(), safeStorage);
   if (stored.size === 0 && fs.existsSync(keyFile())) console.log("The stored keys could not be decrypted; starting without them.");
   try {
     const b = await startBackend(stored.size > 0);
-    for (const [name, key] of stored) {
-      const status = await request(b.port, "POST", "/api/key", { name, key });
+    for (const [name, { key, provider }] of stored) {
+      const status = await request(b.port, "POST", "/api/key", { name, key, provider });
       if (status !== 200) console.log(`Restoring a stored key failed (HTTP ${status}).`);
     }
     if (win) await win.loadURL(`${b.origin}/${stored.size > 0 ? "?stored=1" : ""}${hash || ""}`);
@@ -187,9 +187,9 @@ ipcMain.handle("eco:notify", (event, title, body) => {
   return true;
 });
 
-ipcMain.handle("eco:saveKey", (event, name, key) => {
+ipcMain.handle("eco:saveKey", (event, name, key, provider) => {
   if (!fromApp(event)) return { stored: false, reason: "not stored: the request did not come from the app page" };
-  const result = lib.saveNamedKey(keyFile(), name, key, safeStorage);
+  const result = lib.saveNamedKey(keyFile(), name, key, safeStorage, provider);
   if (result.stored && !backend.allowCloud) {  // cloud permission is fixed per backend run
     result.restarting = true;
     scheduleRestart();

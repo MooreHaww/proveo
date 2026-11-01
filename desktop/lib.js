@@ -10,6 +10,8 @@ const KEY_MIN = 8;                 // same limits as eco_server.valid_key
 const KEY_MAX = 512;
 const KEY_NAME_MAX = 40;           // same limit as settings.clean_key_name, which also checks the wording
 const DEFAULT_KEY_NAME = "Default";  // what an old single-key file loads as
+const KEY_PROVIDERS = ["Meta", "OpenAI", "Claude (Anthropic)", "Gemini (Google)", "Other"];  // same as eco_core.KEY_PROVIDERS
+const KEY_PREFIXES = [["sk-ant-", "Claude (Anthropic)"], ["sk-proj-", "OpenAI"], ["AIza", "Gemini (Google)"], ["gsk_", "Groq"]];  // same as eco_core.KEY_PREFIXES
 const NOTIFY_TITLE_MAX = 80;
 const NOTIFY_BODY_MAX = 240;
 
@@ -130,25 +132,49 @@ function removeKeyFile(file) {
   return { removed: true };
 }
 
-/** Every stored key as a Map of name to key. Empty if there is no file or it cannot be decrypted. */
-function loadKeys(file, crypto) {
+/** A key's provider label. Without a valid one: Default is Meta, any other name is Other (eco_core.key_provider). */
+function keyProvider(name, label) {
+  if (KEY_PROVIDERS.includes(label)) return label;
+  return name.trim().toLowerCase() === DEFAULT_KEY_NAME.toLowerCase() ? "Meta" : "Other";
+}
+
+/** Why this key can't have this label, or "" (eco_core.key_label_problem). Never any part of the key. */
+function keyLabelProblem(key, label) {
+  const known = KEY_PREFIXES.find(([prefix]) => key.startsWith(prefix));
+  if (!known || label === known[1] || label === "Other") return "";
+  const problem = `This key looks like ${known[1] === "OpenAI" ? "an" : "a"} ${known[1]} key, but it is labelled ${label}. Choose the right provider.`;
+  return KEY_PROVIDERS.includes(known[1]) ? problem : `${problem} ${known[1]} is not on the list, so choose Other.`;
+}
+
+/** A stored label the key's prefix contradicts becomes Other, so an older file can't send it to Meta. */
+const storedLabel = (key, label) => (keyLabelProblem(key, label) ? "Other" : label);
+
+/** Every stored key as a Map of name to {key, provider}. Empty if there is no file or it cannot be decrypted. */
+function loadKeyEntries(file, crypto) {
   const text = readDecrypted(file, crypto);
-  const keys = new Map();
-  if (text === null) return keys;
+  const entries = new Map();
+  if (text === null) return entries;
   let payload = null;
   try { payload = JSON.parse(text); } catch (e) { /* an old single-key file */ }
   if (payload && payload.version === 1 && payload.keys && typeof payload.keys === "object") {
+    const labels = payload.providers && typeof payload.providers === "object" ? payload.providers : {};
     for (const [name, key] of Object.entries(payload.keys)) {
-      if (validKeyName(name) && validKey(key)) keys.set(name, key);
+      if (validKeyName(name) && validKey(key)) entries.set(name, { key, provider: storedLabel(key, keyProvider(name, labels[name])) });
     }
   } else if (validKey(text)) {
-    keys.set(DEFAULT_KEY_NAME, text);
+    entries.set(DEFAULT_KEY_NAME, { key: text, provider: storedLabel(text, "Meta") });
   }
-  return keys;
+  return entries;
 }
 
-function writeKeys(file, keys, crypto) {
-  return writeEncrypted(file, JSON.stringify({ version: 1, keys: Object.fromEntries(keys) }), crypto);
+/** The stored keys alone, as a Map of name to key. */
+function loadKeys(file, crypto) {
+  return new Map([...loadKeyEntries(file, crypto)].map(([name, entry]) => [name, entry.key]));
+}
+
+function writeKeys(file, entries, crypto) {
+  const pick = (field) => Object.fromEntries([...entries].map(([name, entry]) => [name, entry[field]]));
+  return writeEncrypted(file, JSON.stringify({ version: 1, keys: pick("key"), providers: pick("provider") }), crypto);
 }
 
 function dropName(keys, name) {
@@ -158,16 +184,20 @@ function dropName(keys, name) {
 
 /**
  * Add a named key or replace the one with that name (ignoring case). An old single-key file
- * becomes the new format here. Nothing is written unless encryption works.
- * Returns {stored: true} or {stored: false, reason}.
+ * becomes the new format here. Nothing is written unless encryption works. With no provider, the
+ * label follows keyProvider. Returns {stored: true} or {stored: false, reason}.
  */
-function saveNamedKey(file, name, key, crypto) {
+function saveNamedKey(file, name, key, crypto, provider) {
   if (!validKeyName(name)) return { stored: false, reason: `not stored: the name is not 1-${KEY_NAME_MAX} characters` };
   if (!validKey(key)) return { stored: false, reason: "not stored: the key is not 8-512 printable characters" };
-  const keys = loadKeys(file, crypto);
-  dropName(keys, name);
-  keys.set(name.trim(), key);
-  return writeKeys(file, keys, crypto);
+  if (provider && !KEY_PROVIDERS.includes(provider)) return { stored: false, reason: "not stored: that provider is not on the list" };
+  const label = keyProvider(name, provider);
+  const problem = keyLabelProblem(key, label);
+  if (problem) return { stored: false, reason: `not stored: ${problem}` };
+  const entries = loadKeyEntries(file, crypto);
+  dropName(entries, name);
+  entries.set(name.trim(), { key, provider: label });
+  return writeKeys(file, entries, crypto);
 }
 
 /**
@@ -178,14 +208,14 @@ function saveNamedKey(file, name, key, crypto) {
 function removeNamedKey(file, name, crypto) {
   if (typeof name !== "string") return { removed: false, remaining: 0 };
   if (fs.existsSync(file) && readDecrypted(file, crypto) === null) return { removed: true, remaining: 0 };
-  const keys = loadKeys(file, crypto);
-  dropName(keys, name);
-  if (keys.size === 0) {
+  const entries = loadKeyEntries(file, crypto);
+  dropName(entries, name);
+  if (entries.size === 0) {
     removeKeyFile(file);
     return { removed: true, remaining: 0 };
   }
-  const written = writeKeys(file, keys, crypto);
-  return { removed: written.stored, remaining: keys.size };
+  const written = writeKeys(file, entries, crypto);
+  return { removed: written.stored, remaining: entries.size };
 }
 
 /** Notification text: strings only, control characters flattened, long text cut with an ellipsis. */
@@ -224,8 +254,8 @@ function statusPage(title, detail) {
 }
 
 module.exports = {
-  BACKEND_BOOT, KEY_FILE, NOTIFY_TITLE_MAX, NOTIFY_BODY_MAX,
+  BACKEND_BOOT, KEY_FILE, KEY_PROVIDERS, NOTIFY_TITLE_MAX, NOTIFY_BODY_MAX,
   bundledBackend, backendArgs, pickFreePort, pythonCandidates, dataDir, keyFilePath, backendEnv, validKey, validKeyName,
-  saveKeyFile, loadKeyFile, removeKeyFile, loadKeys, saveNamedKey, removeNamedKey,
+  saveKeyFile, loadKeyFile, removeKeyFile, keyProvider, keyLabelProblem, loadKeyEntries, loadKeys, saveNamedKey, removeNamedKey,
   cleanText, notification, linkAction, escapeHtml, statusPage,
 };

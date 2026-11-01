@@ -632,10 +632,11 @@
               <h3 style="margin:0 0 10px">Add a key</h3>
               <div class="fields">
                 <div><label class="f" for="keyName">Name</label><input id="keyName" type="text" maxlength="40" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Meta personal"></div>
-                <div><label class="f" for="keyInput">Key</label><input id="keyInput" type="password" class="code" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Paste a key"></div>
+                <div><label class="f" for="keyProvider">Provider</label><select id="keyProvider"><option>Meta</option><option>OpenAI</option><option>Claude (Anthropic)</option><option>Gemini (Google)</option><option>Other</option></select></div>
+                <div class="full"><label class="f" for="keyInput">Key</label><input id="keyInput" type="password" class="code" autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="Paste a key"></div>
               </div>
               <div class="row" style="margin-top:12px"><button class="btn" id="saveKey" type="button">Save</button></div>
-              <p class="hint">Use a short label for the name. A key is never shown again after you save it. Choose which rung uses it on the Models screen.</p>
+              <p class="hint">Use a short label for the name. A key is never shown again after you save it. Choose which rung uses it on the Models screen. Only a key marked Meta can be used by a rung that calls Meta, and that is the only kind of key ever used without you choosing it.</p>
               <div class="msg" id="keyMsg" role="status"></div>
             </section>
           </div>
@@ -697,7 +698,7 @@
 (() => {
   // Security notes: an API key is only ever read from #keyInput, sent to /api/key and (if the
   // desktop wrapper exists) handed to window.ecoDesktop.saveKey. It is never shown, logged or stored.
-  // The page only ever knows key names.
+  // The page only ever knows key names and provider labels.
   const ICON = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>',
     cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -840,8 +841,19 @@
   const nameOf = (id) => id === "memory" ? "Memory" : id === "none" ? "None" : (S.names[id] || id);
   const blocked = () => !!(S.budget && S.budget.level === "blocked");
   const KEY_WAITS = ["No API key set yet", "Choose a key"];
+  const META_KEY_REFUSAL = "This rung calls Meta, but that key is for ";
+  // Same check as eco_core.key_label_problem. The backend enforces it; this one stops the key before it is sent.
+  const KEY_PREFIXES = [["sk-ant-", "Claude (Anthropic)"], ["sk-proj-", "OpenAI"], ["AIza", "Gemini (Google)"], ["gsk_", "Groq"]];
+  function keyLabelProblem(key, label) {
+    const known = KEY_PREFIXES.find(([prefix]) => key.startsWith(prefix));
+    if (!known || label === known[1] || label === "Other") return "";
+    const onList = [...$("keyProvider").options].some((o) => o.value === known[1]);
+    const problem = `This key looks like ${known[1] === "OpenAI" ? "an" : "a"} ${known[1]} key, but it is labelled ${label}. Choose the right provider.`;
+    return onList ? problem : `${problem} ${known[1]} is not on the list, so choose Other.`;
+  }
+  const isKeyWait = (why) => KEY_WAITS.includes(why) || String(why).startsWith(META_KEY_REFUSAL);
   const keyWait = (t) => (t.kind === "cloud" && S.settings.rung_keys[t.id] && S.settings.rung_keys[t.id].reason) || "";
-  // Same rule as eco_core.may_use_only_key, for rungs with unsaved edits: every other rung must name its key.
+  // Same rules as eco_core (may_use_only_key, calls_meta_host, key_name_for_tier), for rungs with unsaved edits.
   const DEFAULT_META_HOST = "api.meta.ai";
   function mayUseOnlyKey(t) {
     try {
@@ -849,15 +861,39 @@
       return t.provider === "meta" && u.protocol === "https:" && u.hostname === DEFAULT_META_HOST && !u.port;
     } catch (e) { return false; }
   }
+  function callsMetaHost(t) {
+    try { return new URL(t.base_url).hostname.replace(/\.+$/, "") === DEFAULT_META_HOST; } catch (e) { return false; }
+  }
+  const providerOf = (name) => (S.settings.key_providers || {})[name] || "Other";
+  const metaKeys = () => S.settings.key_names.filter((n) => providerOf(n) === "Meta");
+  const storedName = (wanted) => S.settings.key_names.find((n) => nameKey(n) === nameKey(wanted));
+  function metaRefusal(t, name) {
+    return callsMetaHost(t) && providerOf(name) !== "Meta" ? META_KEY_REFUSAL + providerOf(name) : "";
+  }
   function keyReason(t) {
     const names = S.settings.key_names;
-    if (t.key_name) return names.some((n) => nameKey(n) === nameKey(t.key_name)) ? "" : KEY_WAITS[0];
-    if (names.length === 1 && mayUseOnlyKey(t)) return "";
+    if (t.key_name) {
+      const known = storedName(t.key_name);
+      return known ? metaRefusal(t, known) : KEY_WAITS[0];
+    }
+    if (metaKeys().length === 1 && mayUseOnlyKey(t)) return "";
     return names.length ? KEY_WAITS[1] : KEY_WAITS[0];
+  }
+  /* Allowed, but worth saying: the key is marked for another provider than the one this rung is set up for. */
+  function keyWarning(t) {
+    if (callsMetaHost(t)) {
+      return !t.key_name && S.settings.key_names.length && !metaKeys().length ? "This rung calls Meta. Add a key with its provider set to Meta to use it." : "";
+    }
+    const known = t.key_name && storedName(t.key_name);
+    const preset = Object.values(PRESETS).find((p) => host(p.base_url) === host(t.base_url));
+    const service = t.provider === "meta" ? "Meta" : preset && preset.name;
+    return known && service && providerOf(known) !== service
+      ? `This rung is set up for ${service}, but that key is for ${providerOf(known)}. It will still be sent there.` : "";
   }
   function keyWaitNote(reason) {
     return h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), reason);
   }
+  const keyWarnNote = (text) => h("p", { class: "keywait" }, h("b", null, "Check this:"), text);
 
   /* ---------- Ladder ---------- */
   const rungEls = {};
@@ -977,10 +1013,10 @@
       $("summary").textContent = "Nothing was run.";
     }
     notice(budgetStop ? "Budget limit reached: the cloud rung was skipped. Raise or remove the limit on the Cloud and Budget screen."
-      : KEY_WAITS.includes(job.message) ? `${KEY_WAITS.map((why) => {
+      : isKeyWait(job.message) ? `${[...new Set(job.skipped.map((id) => job.skip_reasons[id]))].filter(isKeyWait).map((why) => {
           const rungs = job.skipped.filter((id) => job.skip_reasons[id] === why).map(nameOf);
-          return rungs.length ? `${rungs.join(", ")} waited: ${why}.` : "";
-        }).filter(Boolean).join(" ")} Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
+          return `${rungs.join(", ")} waited: ${why}.`;
+        }).join(" ")} Keys are on the Cloud and Budget screen, and each rung's key on the Models screen.`
       : job.message);
   }
 
@@ -1241,19 +1277,22 @@
     } catch (e) { const m = h("div", { class: "msg" }); out.append(m); showMsg(m, "error", "Could not probe:", e.message); }
     btn.disabled = false; btn.textContent = "Probe";
   }
-  /* The Key dropdown of a cloud rung. Names only; a name with no key stays selected, marked as not set.
+  /* The Key dropdown of a cloud rung. Names and providers only; a name with no key stays selected, marked as not set.
      onPick(name) saves the choice; by default it is an unsaved edit on the Models screen. */
   function keyPicker(t, onPick) {
     const names = S.settings.key_names;
-    const known = t.key_name ? names.find((n) => nameKey(n) === nameKey(t.key_name)) : null;
-    const auto = !names.length ? "No key yet" : names.length === 1 && mayUseOnlyKey(t) ? `Automatic (${names[0]})` : "Choose a key";
+    const known = t.key_name ? storedName(t.key_name) : null;
+    const auto = !names.length ? "No key yet" : metaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${metaKeys()[0]})` : "Choose a key";
     const sel = h("select", { "aria-label": `API key for ${t.name}` },
       h("option", { value: "" }, auto),
-      ...names.map((n) => h("option", { value: n }, n)),
+      ...names.map((n) => h("option", { value: n }, `${n} (${providerOf(n)})`)),
       t.key_name && !known ? h("option", { value: t.key_name }, `${t.key_name} (not set)`) : null);
     sel.value = known || t.key_name || "";
     const note = h("div", { class: "keynote" });
-    const showNote = () => { const why = keyReason(t); note.replaceChildren(...(why ? [keyWaitNote(why)] : [])); };
+    const showNote = () => {
+      const why = keyReason(t), warning = keyWarning(t);
+      note.replaceChildren(...(why ? [keyWaitNote(why)] : []), ...(warning ? [keyWarnNote(warning)] : []));
+    };
     sel.addEventListener("change", () => {
       if (onPick) return onPick(sel.value);
       if (sel.value) t.key_name = sel.value; else delete t.key_name;
@@ -1271,10 +1310,15 @@
     list.hidden = !waiting.length;
     list.replaceChildren(...waiting.map((t) => h("li", null,
       h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), h("b", null, t.name), keyReason(t)),
+      keyWarning(t) ? keyWarnNote(keyWarning(t)) : null,
       S.settings.key_names.length ? keyPicker(t, (name) => pickRungKey(t, name)) : null)));
   }
   async function pickRungKey(t, name) {
     const msg = $("keyMsg");
+    if (name && metaRefusal(t, name)) {
+      renderRungWaits();
+      return showMsg(msg, "error", "Not saved:", metaRefusal(t, name));
+    }
     const tiers = clone(S.settings.tiers);
     const change = (rung) => { if (name) rung.key_name = name; else delete rung.key_name; };
     change(tiers.find((x) => x.id === t.id));
@@ -1283,7 +1327,8 @@
       const draft = S.dirty && S.draft.find((x) => x.id === t.id);  // keep unsaved Models edits
       if (draft) change(draft);
       applySettings(view);
-      showMsg(msg, "ok", "Saved.", name ? `${t.name} uses the key named ${name}.` : `${t.name} has no key chosen.`);
+      const warning = name ? keyWarning({ ...t, key_name: name }) : "";
+      showMsg(msg, "ok", "Saved.", (name ? `${t.name} uses the key named ${name}.` : `${t.name} has no key chosen.`) + (warning ? ` ${warning}` : ""));
     } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
   function renderRungList() {
@@ -1380,6 +1425,7 @@
     // A suggestion for the Add a key form; the key itself is still typed there.
     const typed = $("keyName").value.trim();
     if (!typed || Object.values(PRESETS).some((x) => x.key_name === typed)) $("keyName").value = p.key_name;
+    $("keyProvider").value = p.name;  // each preset's name is its provider label
     showMsg($("cloudMsg"), "ok", `${p.name} filled in.`, "Add the prices from the provider's pricing page, save, then add a key with the name suggested below.");
   }
   function setProvider(p) {
@@ -1387,7 +1433,11 @@
     $("provOai").checked = p === "openai_compatible";
     $("metaFields").hidden = p !== "meta";
     $("oaiFields").hidden = p !== "openai_compatible";
-    if (p === "meta") { S.preset = null; showPreset(null); }
+    if (p === "meta") {
+      if (S.preset) $("keyProvider").value = "Meta";
+      S.preset = null;
+      showPreset(null);
+    }
   }
   function fillCloudForm() {
     renderRungWaits();
@@ -1449,7 +1499,7 @@
       }
       applySettings(view);
       showMsg(msg, "ok", asNew ? "Added as a new rung." : "Saved.", prov === "meta" ? `Meta Muse Spark at ${tier.flags.effort} effort.`
-        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}.` : `${tier.name} (untested). It waits until you choose a key for it.`);
+        : tier.key_name ? `${tier.name} (untested). It uses the key named ${tier.key_name}. ${keyWarning(tier)}`.trim() : `${tier.name} (untested). It waits until you choose a key for it.`);
     } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
   }
   const REMOVE_WARNING = "Remove this key from the app? This does not cancel it at the provider; to revoke it, do that on the provider's site.";
@@ -1469,6 +1519,7 @@
           h("span", { class: "keystate set" }, icon("key"), h("span", null, "Key set")),
           h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${k.name}`, "aria-expanded": String(asking),
                         onclick: () => { S.confirmKey = asking ? null : k.name; renderKeys(); } }, "Remove")),
+        h("p", { class: "hint" }, `Provider: ${k.provider}`),
         h("p", { class: "hint" }, uses),
         h("p", { class: "hint" }, S.storedKeys.has(nameKey(k.name)) ? "Stored encrypted on this computer" : "Held in memory for this session only"),
         asking ? h("div", { class: "keyconfirm" },
@@ -1494,13 +1545,20 @@
     let key = input.value;
     input.value = "";  // cleared at once; the key is never shown again
     if (!key) return showMsg(msg, "error", "No key:", "paste a key into the field first");
+    const provider = $("keyProvider").value;
+    const problem = keyLabelProblem(key, provider);
+    if (problem) {
+      key = "";
+      return showMsg(msg, "error", "Key not saved:", `${problem} Then paste the key again.`);
+    }
     try {
-      const r = await post("/api/key", { name, key });
+      const r = await post("/api/key", { name, key, provider });
       nameInput.value = "";
+      $("keyProvider").value = "Meta";
       const d = desktop();
       if (d && typeof d.saveKey === "function") {
         let res = null;
-        try { res = await d.saveKey(name, key); } catch (e) { /* reported below */ }
+        try { res = await d.saveKey(name, key, provider); } catch (e) { /* reported below */ }
         const stored = !!(res && res.stored === true);
         setSessionOnly(nameKey(name), !stored);
         if (stored) {

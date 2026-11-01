@@ -279,3 +279,125 @@ test("named keys: unreadable files give no keys, and a remove leaves them alone"
   fs.writeFileSync(file, bad.encryptString(JSON.stringify({ version: 1, keys: { "ok name": "short", Good: FAKE } })));
   assert.deepEqual([...lib.loadKeys(file, bad)], [["Good", FAKE]], "invalid entries are ignored");
 });
+
+/* ---------- Provider labels in the key file ---------- */
+
+const entries = (file) => [...lib.loadKeyEntries(file, fakeCrypto())];
+const rawFile = (file, payload) => fs.writeFileSync(file, fakeCrypto().encryptString(typeof payload === "string" ? payload : JSON.stringify(payload)));
+
+test("providers: kept beside the name, encrypted, and every entry keeps its own", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  assert.deepEqual(lib.saveNamedKey(file, "Claude key", FAKE, fakeCrypto(), "Claude (Anthropic)"), { stored: true });
+  assert.deepEqual(lib.saveNamedKey(file, "Meta personal", KEY_2, fakeCrypto(), "Meta"), { stored: true });
+  assert.deepEqual(entries(file), [["Claude key", { key: FAKE, provider: "Claude (Anthropic)" }], ["Meta personal", { key: KEY_2, provider: "Meta" }]]);
+  assert.ok(!fs.readFileSync(file).includes(Buffer.from("Anthropic")), "the label is inside the encrypted file");
+  assert.deepEqual(lib.removeNamedKey(file, "Meta personal", fakeCrypto()), { removed: true, remaining: 1 });
+  assert.deepEqual(entries(file), [["Claude key", { key: FAKE, provider: "Claude (Anthropic)" }]], "a remove keeps the others' labels");
+});
+
+test("providers: replacing a name replaces its label; an unknown label stores nothing", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  lib.saveNamedKey(file, "Mine", FAKE, fakeCrypto(), "Meta");
+  lib.saveNamedKey(file, "MINE", KEY_2, fakeCrypto(), "OpenAI");
+  assert.deepEqual(entries(file), [["MINE", { key: KEY_2, provider: "OpenAI" }]]);
+  const r = lib.saveNamedKey(file, "New", FAKE, fakeCrypto(), "Anyone");
+  assert.equal(r.stored, false);
+  assert.ok(!r.reason.includes(FAKE));
+  assert.deepEqual(entries(file).map(([n]) => n), ["MINE"]);
+});
+
+test("providers: with no label, Default means Meta and any other name means Other", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  for (const none of [undefined, ""]) {
+    lib.saveNamedKey(file, "Default", FAKE, fakeCrypto(), none);
+    lib.saveNamedKey(file, "Mine", KEY_2, fakeCrypto(), none);
+    assert.deepEqual(entries(file), [["Default", { key: FAKE, provider: "Meta" }], ["Mine", { key: KEY_2, provider: "Other" }]]);
+    lib.removeNamedKey(file, "Default", fakeCrypto());
+    lib.removeNamedKey(file, "Mine", fakeCrypto());
+  }
+});
+
+test("providers: legacy files load by those rules, and migrate without changing them", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  rawFile(file, FAKE);
+  assert.deepEqual(entries(file), [["Default", { key: FAKE, provider: "Meta" }]], "the old single-key file");
+
+  rawFile(file, { version: 1, keys: { Default: FAKE, "Claude key": KEY_2 } });
+  const legacy = [["Default", { key: FAKE, provider: "Meta" }], ["Claude key", { key: KEY_2, provider: "Other" }]];
+  assert.deepEqual(entries(file), legacy, "named keys with no providers");
+
+  lib.saveNamedKey(file, "New", "made-up-test-key-third-11111", fakeCrypto(), "Gemini (Google)");
+  assert.deepEqual(entries(file).slice(0, 2), legacy, "written out with the same labels");
+  assert.deepEqual(JSON.parse(fakeCrypto().decryptString(fs.readFileSync(file))).providers,
+    { Default: "Meta", "Claude key": "Other", New: "Gemini (Google)" });
+});
+
+test("providers: a bad label in the file falls back to the same rules", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  for (const providers of ["Meta", null, 12, { Mine: "Anyone", Default: 7, __proto__: { Mine: "Meta" } }]) {
+    rawFile(file, { version: 1, keys: { Default: FAKE, Mine: KEY_2 }, providers });
+    assert.deepEqual(entries(file), [["Default", { key: FAKE, provider: "Meta" }], ["Mine", { key: KEY_2, provider: "Other" }]], JSON.stringify(providers));
+  }
+});
+
+/* ---------- Key prefixes ---------- */
+
+const LOOKS = { "Claude (Anthropic)": "sk-ant-made-up-guard-QQ11", OpenAI: "sk-proj-made-up-guard-QQ22", "Gemini (Google)": "AIzamade-up-guard-QQ33", Groq: "gsk_made-up-guard-QQ44" };
+const CLEAR = ["sk-made-up-bare-QQ55", "sk-antelope-made-up-QQ66", "sk-project-made-up-QQ77", "SK-ANT-made-up-QQ88", "aizamade-up-QQ99", FAKE];
+
+test("key prefixes: a known prefix under another known label is refused, without the key", () => {
+  for (const [looksLike, key] of Object.entries(LOOKS)) {
+    for (const label of lib.KEY_PROVIDERS) {
+      const problem = lib.keyLabelProblem(key, label);
+      if (label === looksLike || label === "Other") { assert.equal(problem, "", `${key} as ${label}`); continue; }
+      const article = looksLike === "OpenAI" ? "an" : "a";
+      assert.ok(problem.startsWith(`This key looks like ${article} ${looksLike} key, but it is labelled ${label}. Choose the right provider.`), problem);
+      assert.ok(!problem.includes(key.slice(0, 4)) && !problem.includes(key.slice(-4)), "no part of the key");
+    }
+  }
+  for (const key of CLEAR) for (const label of lib.KEY_PROVIDERS) assert.equal(lib.keyLabelProblem(key, label), "", `${key} as ${label}`);
+});
+
+test("key prefixes: the page's own check gives the same answers", () => {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const table = /const KEY_PREFIXES = \[\[.*?\]\];/.exec(page)[0];
+  const fn = /function keyLabelProblem\(key, label\) \{[\s\S]*?\n  \}/.exec(page)[0];
+  const options = lib.KEY_PROVIDERS.map((value) => ({ value }));
+  const check = new Function("$", `${table}\n${fn}\nreturn keyLabelProblem;`)(() => ({ options }));
+  for (const key of [...Object.values(LOOKS), ...CLEAR]) {
+    for (const label of lib.KEY_PROVIDERS) assert.equal(check(key, label), lib.keyLabelProblem(key, label), `${key} as ${label}`);
+  }
+});
+
+test("key prefixes: saving refuses a wrong label and writes nothing; Other and a bare sk- pass", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  for (const [args, label] of [[["Mine", LOOKS.OpenAI, fakeCrypto(), "Meta"], "Meta"], [["Default", LOOKS.Groq, fakeCrypto()], "no label, Default"]]) {
+    const r = lib.saveNamedKey(file, ...args);
+    assert.equal(r.stored, false, label);
+    assert.match(r.reason, /^not stored: This key looks like an? /);
+    for (const key of Object.values(LOOKS)) assert.ok(!r.reason.includes(key));
+    assert.ok(!fs.existsSync(file), label);
+  }
+  assert.equal(lib.saveNamedKey(file, "Bare", CLEAR[0], fakeCrypto(), "Meta").stored, true);
+  assert.equal(lib.saveNamedKey(file, "Groq key", LOOKS.Groq, fakeCrypto(), "Other").stored, true);
+  assert.equal(lib.saveNamedKey(file, "Named", LOOKS.OpenAI, fakeCrypto()).stored, true, "no label, another name: Other");
+  assert.deepEqual(entries(file).map(([n, e]) => [n, e.provider]), [["Bare", "Meta"], ["Groq key", "Other"], ["Named", "Other"]]);
+});
+
+test("key prefixes: an older file's contradicted label loads as Other, and the key is kept", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  rawFile(file, LOOKS["Claude (Anthropic)"]);
+  assert.deepEqual(entries(file), [["Default", { key: LOOKS["Claude (Anthropic)"], provider: "Other" }]], "the old single-key file");
+  rawFile(file, { version: 1, keys: { Mine: LOOKS.OpenAI, Bare: CLEAR[0] }, providers: { Mine: "Meta", Bare: "Meta" } });
+  assert.deepEqual(entries(file), [["Mine", { key: LOOKS.OpenAI, provider: "Other" }], ["Bare", { key: CLEAR[0], provider: "Meta" }]]);
+});
+
+test("the bridge passes the provider on, and the save handler refuses other origins first", () => {
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  assert.match(preload, /saveKey: \(name, key, provider\) => ipcRenderer\.invoke\("eco:saveKey", str\(name\), str\(key\), str\(provider\)\)/);
+  assert.match(preload, /removeKey: \(name\) => ipcRenderer\.invoke\("eco:removeKey", str\(name\)\)/);
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.match(main, /"eco:saveKey", \(event, name, key, provider\) => \{\s+if \(!fromApp\(event\)\) return \{ stored: false/);
+  assert.match(main, /"eco:removeKey", \(event, name\) => \{\s+if \(!fromApp\(event\)\) return \{ removed: false/);
+  assert.match(main, /"\/api\/key", \{ name, key, provider \}/);
+});

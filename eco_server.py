@@ -6,7 +6,7 @@ Binds to 127.0.0.1 only. The cloud tier works only if ALLOW_CLOUD=1 was set when
 server started and the monthly budget (settings.py, budget.py) is not used up.
 The ladder comes from the saved settings. Named API keys are held in this process's memory only
 (POST /api/key, or MODEL_API_KEY at start as "Default"); they are never returned: every response
-body is scrubbed, and GET /api/key/status lists names only.
+body is scrubbed, and GET /api/key/status lists names and provider labels only.
 """
 import argparse
 import glob
@@ -98,17 +98,28 @@ class EcoApp:
         # so that responses and logs stay scrubbed of it after it is replaced or removed.
         env_key = os.environ.get("MODEL_API_KEY", "")
         self._keys = {DEFAULT_KEY_NAME: env_key} if env_key else {}
+        self._key_providers = {DEFAULT_KEY_NAME: eco_core.stored_key_label(env_key, eco_core.META_PROVIDER)} if env_key else {}
         self._seen_keys = {env_key} if env_key else set()
 
-    def set_key(self, name, key):
-        """Add a named key, or replace the one with that name (ignoring case). Returns the name."""
+    def set_key(self, name, key, provider=None):
+        """Add a named key, or replace the one with that name (ignoring case). Returns the name.
+        provider is a label from eco_core.KEY_PROVIDERS; None follows eco_core.key_provider."""
+        if provider is not None and provider not in eco_core.KEY_PROVIDERS:
+            raise ValueError(f"provider must be one of: {', '.join(eco_core.KEY_PROVIDERS)}")
         with self.lock:
             clean = settings.clean_key_name(name, [*self._seen_keys, key])
-            # Scrubbing removes key text from responses, so it must not be able to eat a name.
+            # Scrubbing removes key text from responses, so it must not be able to eat a name or a label.
             if any(key.casefold() in n.casefold() for n in self._keys):
                 raise ValueError(settings.KEY_NAME_LABEL)
+            if any(key.casefold() in p.casefold() for p in eco_core.KEY_PROVIDERS):
+                raise ValueError("that key is the same as a provider's name")
+            label = provider or eco_core.key_provider(clean)
+            problem = eco_core.key_label_problem(key, label)
+            if problem:
+                raise ValueError(problem)
             self._forget_name(clean)
             self._keys[clean] = key
+            self._key_providers[clean] = label
             self._seen_keys.add(key)
         return clean
 
@@ -120,19 +131,25 @@ class EcoApp:
     def _forget_name(self, name):
         for existing in [n for n in self._keys if n.casefold() == name.strip().casefold()]:
             del self._keys[existing]
+            del self._key_providers[existing]
 
     def _key_copy(self):
         with self.lock:
             return dict(self._keys)
 
+    def _provider_copy(self):
+        with self.lock:
+            return dict(self._key_providers)
+
     def key_status(self):
-        """Names and the rungs using each. Never any part of a key: no length, no last 4."""
-        keys = self._key_copy()
+        """Names, providers and the rungs using each. Never any part of a key: no length, no last 4."""
+        keys, providers = self._key_copy(), self._provider_copy()
         try:
             tiers = [t for t in settings.load()["tiers"] if t["kind"] == "cloud"]
         except ValueError:
             tiers = []
-        return {"keys": [{"name": n, "rungs": [t["name"] for t in tiers if eco_core.key_name_for_tier(t, keys)[0] == n]}
+        return {"keys": [{"name": n, "provider": eco_core.key_provider(n, providers),
+                          "rungs": [t["name"] for t in tiers if eco_core.key_name_for_tier(t, keys, providers)[0] == n]}
                          for n in sorted(keys, key=str.casefold)]}
 
     def secrets(self):
@@ -140,7 +157,8 @@ class EcoApp:
             return sorted(self._seen_keys)
 
     def settings_ladder(self):
-        return eco_core.build_tiers(settings.load(), keys=self._key_copy(), allow_cloud=self.allow_cloud)
+        return eco_core.build_tiers(settings.load(), keys=self._key_copy(), allow_cloud=self.allow_cloud,
+                                    providers=self._provider_copy())
 
     def settings_cloud_tier(self):
         """Eco off: the first enabled cloud tier, or None."""
@@ -148,13 +166,14 @@ class EcoApp:
 
     def settings_view(self):
         # saved: False until the settings file exists (the page shows its first-run card).
-        current, keys = settings.load(), self._key_copy()
+        current, keys, providers = settings.load(), self._key_copy(), self._provider_copy()
         rung_keys = {}
         for t in current["tiers"]:
             if t["kind"] == "cloud":
-                name, reason = eco_core.key_name_for_tier(t, keys)
+                name, reason = eco_core.key_name_for_tier(t, keys, providers)
                 rung_keys[t["id"]] = {"key_name": name, "reason": reason}
         return {**current, "key_set": bool(keys), "key_names": sorted(keys, key=str.casefold), "rung_keys": rung_keys,
+                "key_providers": {n: eco_core.key_provider(n, providers) for n in keys},
                 "max_tiers": settings.MAX_TIERS, "providers": PROVIDERS,
                 "saved": os.path.exists(settings.settings_path()), "defaults": settings.default_settings()["tiers"]}
 
@@ -162,9 +181,20 @@ class EcoApp:
         if not isinstance(req, dict) or set(req) - {"tiers", "budget"}:
             raise ValueError("send only tiers and/or budget (the API key is set with POST /api/key)")
         current = settings.load() if not {"tiers", "budget"} <= set(req) else {}
-        settings.save({"tiers": req.get("tiers", current.get("tiers")),
-                       "budget": req.get("budget", current.get("budget"))}, secrets=self.secrets())
+        new = {"tiers": req.get("tiers", current.get("tiers")), "budget": req.get("budget", current.get("budget"))}
+        if "tiers" in req:
+            self._refuse_wrong_provider(settings.validate(new)["tiers"])
+        settings.save(new, secrets=self.secrets())
         return self.settings_view()
+
+    def _refuse_wrong_provider(self, tiers):
+        """A rung on the Meta host can't be paired with a stored key for anyone else, even a disabled one."""
+        keys, providers = self._key_copy(), self._provider_copy()
+        for t in tiers:
+            found = eco_core.find_key_name(t["key_name"], keys) if t.get("key_name") else None
+            refusal = eco_core.meta_key_refusal(t, found, providers) if found else ""
+            if refusal:
+                raise ValueError(f"{t['name']}: {refusal}")
 
     def budget_status(self, pending=0.0):
         state = budget.status(settings.load()["budget"], self.log_path, pending=pending)
@@ -273,7 +303,7 @@ class EcoApp:
                 message = CLOUD_DISABLED if not self.allow_cloud else result.get("skip_reason", "")
                 # Every skipped rung is only waiting for a key: that is the thing to say.
                 reasons = set(result["skip_reasons"].values())
-                if reasons <= {eco_core.NO_KEY_REASON, eco_core.CHOOSE_KEY_REASON}:
+                if reasons and all(eco_core.is_key_wait(r) for r in reasons):
                     message = sorted(reasons)[-1]
             with self.lock:
                 job.update(status="done", current=None, result=result, skipped=result["skipped"],
@@ -458,8 +488,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.detect(req.get("address")))
             if self.path == "/api/key":
                 # The key is never echoed, not even in an error message.
-                if set(req) == {"name", "key"} and valid_key(req["key"]):
-                    self.app.set_key(req["name"], req["key"])
+                if set(req) in ({"name", "key"}, {"name", "key", "provider"}) and valid_key(req["key"]):
+                    self.app.set_key(req["name"], req["key"], req.get("provider"))
                     return self._json(self.app.key_status())
                 # The old single-key request still works and answers as it did: the name is "Default".
                 if set(req) == {"key"} and valid_key(req["key"]):
@@ -469,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.app.remove_key(DEFAULT_KEY_NAME)
                     return self._json({"set": False})
                 raise ValueError('send {"name": "<a label>", "key": "<8-512 printable characters, '
-                                 'no spaces>"}; POST /api/key/remove forgets one')
+                                 'no spaces>", "provider": "<optional provider label>"}; POST /api/key/remove forgets one')
             if self.path == "/api/key/remove":
                 if set(req) != {"name"} or not isinstance(req["name"], str):
                     raise ValueError('send {"name": "<the key\'s name>"}')

@@ -279,12 +279,14 @@ meta = settings.default_settings()["tiers"][2]
 tiers = [meta, {{**meta, "id": "edited", "base_url": "http://127.0.0.1:9/v1"}},
          {{"id": "custom", "kind": "cloud", "provider": "openai_compatible", "base_url": "http://127.0.0.1:9/v1", "model": "m", "flags": {{}},
           "price_in_per_m": 1.0, "price_out_per_m": 1.0}}]
-built = eco_core.build_tiers({{"tiers": tiers}}, allow_cloud=True, keys={{"Only": "{KEY}"}})
+built = eco_core.build_tiers({{"tiers": tiers}}, allow_cloud=True, keys={{"Only": "{KEY}"}}, providers={{"Only": "Meta"}})
 built[0].ask("p")
-print(json.dumps([[t.wait_reason for t in built], sent]))
+claude = eco_core.build_tiers({{"tiers": tiers}}, allow_cloud=True, keys={{"Only": "{KEY}"}}, providers={{"Only": "Claude (Anthropic)"}})
+print(json.dumps([[t.wait_reason for t in built], sent, [t.wait_reason for t in claude]]))
 """)
         self.assertEqual(json.loads(p.stdout), [["", "Choose a key", "Choose a key"],
-                                                [["https://api.meta.ai/v1/responses", "Bearer " + KEY]]], p.stderr)
+                                                [["https://api.meta.ai/v1/responses", "Bearer " + KEY]],
+                                                ["Choose a key", "Choose a key", "Choose a key"]], p.stderr)
 
     def test_https_certificates_load(self):
         p = self.run_script("import ssl\nprint(len(ssl.create_default_context().get_ca_certs()) > 0)\n")
