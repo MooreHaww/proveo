@@ -692,9 +692,11 @@
   const S = {
     eco: true, cloudAllowed: false, memory: false, tasks: [], measuredShare: null, polling: null,
     settings: null, draft: null, dirty: false, colors: {}, names: {}, budget: null, keySet: false,
-    mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null,
+    mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null, keyStored: false,
   };
   const desktop = () => (typeof window.ecoDesktop === "object" && window.ecoDesktop) || null;
+  // The desktop app adds ?stored=1 when it restored a key from its encrypted store; ignored in a browser.
+  S.keyStored = !!desktop() && new URLSearchParams(location.search).get("stored") === "1";
 
   function h(tag, props, ...kids) {
     const e = document.createElement(tag);
@@ -1273,9 +1275,8 @@
     k.className = "keystate " + (S.keySet ? "set" : "none");
     k.replaceChildren(icon(S.keySet ? "key" : "skip"), h("span", null, S.keySet ? "Key set" : "No key"));
     $("removeKey").disabled = !S.keySet;
-    const d = desktop();
-    $("keyWhere").textContent = d && typeof d.saveKey === "function"
-      ? "Stored encrypted by the desktop app, and held in memory by this server." : "Held in memory for this session only.";
+    $("keyWhere").textContent = S.keySet && S.keyStored
+      ? "Stored encrypted on this computer." : "Held in memory for this session only.";
   }
   async function saveKey() {
     const input = $("keyInput"), msg = $("keyMsg");
@@ -1287,21 +1288,42 @@
       S.keySet = r.set;
       const d = desktop();
       if (d && typeof d.saveKey === "function") {
-        try { await d.saveKey(key); }
-        catch (e) { showMsg(msg, "error", "Key set for this session,", "but the desktop app could not store it."); key = ""; renderKey(); return; }
+        let res = null;
+        try { res = await d.saveKey(key); } catch (e) { /* reported below */ }
+        S.keyStored = !!(res && res.stored === true);
+        if (S.keyStored) {
+          showMsg(msg, "ok", "Key set.", res.restarting
+            ? "Stored encrypted on this computer. Restarting the local server to allow cloud calls…"
+            : "Stored encrypted on this computer. It is not shown again.");
+        } else {
+          showMsg(msg, "error", "Key set for this session only:", (res && res.reason) || "the desktop app could not store it.");
+        }
+      } else {
+        showMsg(msg, "ok", "Key set.", "It is not shown again.");
       }
-      showMsg(msg, "ok", "Key set.", "It is not shown again.");
     } catch (e) { showMsg(msg, "error", "Key not saved:", e.message); }
     key = "";
     renderKey();
     if (!S.running) resetLadder();
   }
   async function removeKey() {
+    const msg = $("keyMsg");
     try {
       const r = await post("/api/key", { key: null });
       S.keySet = r.set;
-      showMsg($("keyMsg"), "ok", "Key removed.", "Cloud rungs cannot run until a new key is set.");
-    } catch (e) { showMsg($("keyMsg"), "error", "Could not remove the key:", e.message); }
+      showMsg(msg, "ok", "Key removed.", "Cloud rungs cannot run until a new key is set.");
+    } catch (e) { showMsg(msg, "error", "Could not remove the key:", e.message); }
+    const d = desktop();
+    if (d && typeof d.removeKey === "function") {  // the stored copy goes too, even if the server call failed
+      let res = null;
+      try { res = await d.removeKey(); } catch (e) { /* reported below */ }
+      if (res && res.removed) {
+        S.keyStored = false;
+        if (res.restarting) showMsg(msg, "ok", "Key removed.", "Deleted from this computer. Restarting the local server without cloud calls…");
+      } else {
+        showMsg(msg, "error", "Could not delete the stored key:", "the desktop app did not confirm it.");
+      }
+    }
     renderKey();
     if (!S.running) resetLadder();
   }

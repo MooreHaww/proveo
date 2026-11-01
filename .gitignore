@@ -22,3 +22,6 @@ Thumbs.db
 results/eco_memory.jsonl
 # Eco settings (tiers, budget); ECO_DATA_DIR defaults here
 user_data/
+
+# Desktop shell dependencies
+desktop/node_modules/
