@@ -882,7 +882,7 @@
         <section class="block card">
           <h2>Version</h2>
           <p class="num">0.1.0</p>
-          <p><a href="https://github.com/MooreHaww/pi-edge-router" target="_blank" rel="noopener">Repository on GitHub</a></p>
+          <p><a href="https://github.com/MooreHaww/proveo" target="_blank" rel="noopener">Repository on GitHub</a></p>
         </section>
       </div>
     </main>
@@ -2094,12 +2094,16 @@
   }
   /* Running or not, for the saved local rungs. Checked on opening Models and on Refresh, never on a timer. */
   const RUN_STATES = { checking: ["spin", "Checking"], running: ["check", "Running"], stopped: ["cross", "Not running"] };
+  function onThisComputer(t) {
+    return ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(host(t.base_url).replace(/:\d+$/, ""));
+  }
   function startCommand(t) {
     let port = "8080";
     try { const u = new URL(t.base_url); port = u.port || { "http:": "80", "https:": "443" }[u.protocol]; } catch (e) { /* keep the usual port */ }
     if (port === "11434") return "ollama serve";
     if (port === "1234") return "lms server start";
-    return `llama-server -m <model file> -c 4096 --host 0.0.0.0 --port ${port}`;
+    // llama-server listens on this computer only by default. Only a server on another machine has to accept this one.
+    return `llama-server -m <model file> -c 4096${onThisComputer(t) ? "" : " --host 0.0.0.0"} --port ${port}`;
   }
   function openStartHelp(btn, t) {
     closeInfo();
@@ -2108,9 +2112,8 @@
     btn.setAttribute("aria-expanded", "true");
     const code = h("code", null, startCommand(t));
     const copy = h("button", { class: "ghost-btn", type: "button", onclick: () => copyText(code, copy) }, "Copy");
-    const here = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(host(t.base_url).replace(/:\d+$/, ""));
     $("infoPop").hidden = false;
-    $("infoPop").replaceChildren(h("p", null, here ? "To start it, run:" : `To start it, run this on ${host(t.base_url).replace(/:\d+$/, "")}:`),
+    $("infoPop").replaceChildren(h("p", null, onThisComputer(t) ? "To start it, run:" : `To start it, run this on ${host(t.base_url).replace(/:\d+$/, "")}:`),
       h("pre", { class: "codeblock" }, code), copy);
     placeInfo();
   }

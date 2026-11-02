@@ -262,7 +262,8 @@ class PageCopy(unittest.TestCase):
         self.assertIn("<h1>Proveo</h1>", self.page)
         self.assertNotIn('<h2 class="title">Proveo</h2>', self.page, "the top bar already says it")
         self.assertIn('<p class="pitch">Let your tests choose the model. Cheapest first.</p>', self.page)
-        self.assertEqual(self.page.count("pi-edge-router"), 1, "only in the repository link")
+        self.assertEqual(self.page.count("pi-edge-router"), 0, "the old repository name is gone")
+        self.assertEqual(self.page.count("github.com/MooreHaww/proveo"), 1, "only in the repository link")
         html =self.page.split("<script>")[0]
         labels = re.findall(r">[^<]*Eco mode[^<]*<|aria-label=\"Eco mode\"", html)
         self.assertEqual(labels, ['aria-label="Eco mode"', ">Eco mode<"])

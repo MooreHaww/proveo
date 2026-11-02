@@ -333,9 +333,14 @@ class PageRules(unittest.TestCase):
 
     def test_the_start_command_follows_the_port_and_there_is_no_start_button(self):
         body = self.script.split("function startCommand")[1].split("function paintRunState")[0]
-        for words in ('"ollama serve"', '"lms server start"', "llama-server -m <model file> -c 4096 --host 0.0.0.0 --port ${port}", '"Copy"'):
+        for words in ('"ollama serve"', '"lms server start"', "llama-server -m <model file> -c 4096", '"Copy"'):
             self.assertIn(words, body)
         self.assertNotIn('"Start"', self.script)
+
+    def test_the_start_command_opens_the_network_only_for_another_machine(self):
+        body = self.script.split("function startCommand")[1].split("function openStartHelp")[0]
+        self.assertEqual(body.count("0.0.0.0"), 1)
+        self.assertIn('${onThisComputer(t) ? "" : " --host 0.0.0.0"} --port ${port}', body)
 
     def test_the_unreadable_keys_notice_is_hidden_unless_the_desktop_app_asks(self):
         self.assertIn('id="keyNotice" role="status" hidden', self.page)

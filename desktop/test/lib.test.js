@@ -421,6 +421,33 @@ function pageCheckTools() {
   return new Function(`${examples}\n${part("codeTaskPrompt")}\n${part("checksToCode")}\n${part("splitCheck")}\n${part("codeToChecks")}\nreturn { EXAMPLES, codeTaskPrompt, checksToCode, splitCheck, codeToChecks };`)();
 }
 
+function pageStartCommand() {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const part = (name) => new RegExp(`  function ${name}\\([\\s\\S]*?\\n  \\}`).exec(page)[0];
+  const host = /  function host\(url\) \{.*\}/.exec(page)[0];
+  return new Function(`${host}\n${part("onThisComputer")}\n${part("startCommand")}\nreturn startCommand;`)();
+}
+
+test("start command: a rung on this computer does not open the server to the network", () => {
+  const startCommand = pageStartCommand();
+  for (const base_url of ["http://localhost:8080/v1", "http://127.0.0.1:8080/v1", "http://[::1]:8080/v1", "http://0.0.0.0:8080/v1", "http://LOCALHOST:8080/v1"]) {
+    assert.equal(startCommand({ base_url }), "llama-server -m <model file> -c 4096 --port 8080", base_url);
+  }
+});
+
+test("start command: a rung on another machine keeps --host 0.0.0.0, so that machine accepts this one", () => {
+  const startCommand = pageStartCommand();
+  for (const [base_url, port] of [["http://192.168.1.14:8081/v1", 8081], ["http://10.0.0.5:9000/v1", 9000], ["http://my-box.local:8080/v1", 8080]]) {
+    assert.equal(startCommand({ base_url }), `llama-server -m <model file> -c 4096 --host 0.0.0.0 --port ${port}`, base_url);
+  }
+});
+
+test("start command: Ollama and LM Studio keep their own commands", () => {
+  const startCommand = pageStartCommand();
+  assert.equal(startCommand({ base_url: "http://127.0.0.1:11434/v1" }), "ollama serve");
+  assert.equal(startCommand({ base_url: "http://localhost:1234/v1" }), "lms server start");
+});
+
 function pageWordingTools() {
   const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
   const part = (name) => new RegExp(`  function ${name}\\([\\s\\S]*?\\n  \\}`).exec(page)[0];
