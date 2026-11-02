@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Project
-Proveo (repo and folder: pi-edge-router) lets your tests choose the model: a task goes up a ladder of models, cheapest first, and the first answer that passes the developer's own tests wins.
+Proveo (the GitHub repository is now named proveo; the local folder is still called pi-edge-router) lets your tests choose the model: a task goes up a ladder of models, cheapest first, and the first answer that passes the developer's own tests wins.
 Honest scope: it only works for tasks with tests, and the code check is a subprocess with a time limit, not a real sandbox.
 Built for the Meta Global AI Developer Hackathon. It began as a router (router.py) from a quantized Llama 3.2 3B (Q4_K_M) on a Raspberry Pi 5 to a cloud model (Meta Model API, Muse Spark).
 
@@ -138,10 +138,16 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 - Stop only processes you started, by exact PID. Never by name: that can hit the user's own Proveo window or servers.
 - CRLF warnings from git are harmless.
 
+## Checked on the author's own Windows computer
+- Installing the per-user installer to `%LOCALAPPDATA%\Programs\proveo-desktop`.
+- The desktop shortcut.
+- Uninstalling from Windows Settings: the app folder is removed and `%APPDATA%\Proveo` stays.
+- The stored key and settings survive an uninstall and reinstall.
+
 ## Untested
 - Real OpenAI, Claude and Gemini providers: only fake servers so far. The page has no untested badges; the provider info popover says only Meta Muse Spark has been tested.
 - SmartScreen on a fresh machine. The installer is not code-signed.
-- The default install folder, `%LOCALAPPDATA%\Programs\proveo-desktop`: installs were tested in temp folders.
+- Installing on any other computer.
 
 ## Working style
 - The user is new to this stack. Before running commands, explain what you are about to do in one or two sentences.

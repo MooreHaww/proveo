@@ -1,6 +1,4 @@
-# Proveo
-
-Let your tests choose the model. Cheapest first.
+<img src="docs/img/social-preview.png" width="900" alt="Proveo: Let your tests choose the model. Cheapest first.">
 
 <img src="docs/screenshots/run-ladder-cloud02.png" width="900" alt="Run screen: Raspberry Pi 5 and PC GPU rungs fail, the Meta Muse Spark 1.3 rung passes, and its passing code is shown">
 
@@ -22,7 +20,7 @@ Proveo is a Windows desktop app that gives a coding task to the cheapest model y
 
 <img src="docs/screenshots/run-ladder-dark.png" width="900" alt="Benchmark task h10_is_sorted_bug: Raspberry Pi 5 fails, PC GPU passes, the cloud rung is not needed">
 
-*Benchmark task `h10_is_sorted_bug`. The Raspberry Pi 5 passes 3 of 7 tests and fails. The PC GPU passes in 3.6 s. The cloud rung is not needed. Actual cost $0.000000, estimated cloud cost avoided $0.000910.*
+*Benchmark task `h10_is_sorted_bug`. The Raspberry Pi 5 passes only 3 of 7 tests, so it fails. The PC GPU passes in 3.6 s. The cloud rung is not needed. Actual cost $0.000000, estimated cloud cost avoided $0.000910.*
 
 ### A repeat run is answered from memory
 
@@ -74,7 +72,7 @@ Proveo is a Windows desktop app that gives a coding task to the cheapest model y
 
 ## Install
 
-1. Download `Proveo Setup 0.1.0.exe` from the [GitHub Releases page](https://github.com/MooreHaww/proveo/releases).
+1. Download `Proveo Setup 0.1.0.exe` from the [GitHub Releases page](https://github.com/MooreHaww/proveo/releases). GitHub shows the file name with dots (`Proveo.Setup.0.1.0.exe`), and it is the same installer.
 2. Run it. The installer is unsigned, so Windows SmartScreen warns about it. Choose **More info**, then **Run anyway**.
 
 - It installs per user, with no administrator rights, to `%LOCALAPPDATA%\Programs\proveo-desktop`, and creates a desktop shortcut.
@@ -326,6 +324,6 @@ To see exactly what was added: `git log pre-hackathon..main --oneline`, or [comp
 
 ## License
 
-[MIT License](LICENSE). Copyright (c) 2026 Mohammad Hawwari.
+[MIT License](LICENSE). Copyright (c) 2026 Mohammad (Moore) Hawwari.
 
 The software is provided as is. The results here come from small tests and may not match your own work. You are responsible for the costs of any cloud provider you connect.
