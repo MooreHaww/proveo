@@ -433,7 +433,7 @@ class SettingsServerTests(ServerCase):
         off = self.done(eco=False)
         self.assertEqual((off["message"], off["attempts"]), (eco_server.NO_CLOUD_TIER, []))
         self.assertEqual(self.request("/api/stats")[0], 200)
-        self.assertEqual(json.loads(self.request("/api/config")[1]), {"cloud_enabled": False, "cloud_effort": "minimal"})
+        self.assertEqual(json.loads(self.request("/api/config")[1]), {"cloud_enabled": False, "cloud_effort": "minimal", "theme": None})
 
     def test_key_is_memory_only_and_never_leaks(self):
         cloud_srv, local_srv = FakeModelServer(reply=GOOD), FakeModelServer(reply=BAD)

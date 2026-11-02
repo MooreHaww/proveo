@@ -295,6 +295,62 @@ test("providers: kept beside the name, encrypted, and every entry keeps its own"
   assert.deepEqual(entries(file), [["Claude key", { key: FAKE, provider: "Claude (Anthropic)" }]], "a remove keeps the others' labels");
 });
 
+test("disabled keys: the flag is kept in the encrypted file, ignoring case, and the key stays stored", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  lib.saveNamedKey(file, "Two", KEY_2, fakeCrypto(), "Meta");
+  assert.deepEqual(lib.setNamedKeyDisabled(file, "one", true, fakeCrypto()), { stored: true });
+  assert.deepEqual(entries(file), [["One", { key: FAKE, provider: "Meta", disabled: true }], ["Two", { key: KEY_2, provider: "Meta" }]]);
+  assert.ok(!fs.readFileSync(file).includes(Buffer.from("disabled")), "the flag is inside the encrypted file");
+  lib.removeNamedKey(file, "Two", fakeCrypto());
+  assert.equal(lib.loadKeyEntries(file, fakeCrypto()).get("One").disabled, true, "another key's removal keeps it");
+  assert.deepEqual(lib.setNamedKeyDisabled(file, "One", false, fakeCrypto()), { stored: true });
+  assert.deepEqual(entries(file), [["One", { key: FAKE, provider: "Meta" }]]);
+});
+
+test("disabled keys: replacing a key keeps the flag, removing it clears the flag", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  lib.setNamedKeyDisabled(file, "One", true, fakeCrypto());
+  lib.saveNamedKey(file, "ONE", KEY_2, fakeCrypto(), "Meta");
+  assert.deepEqual(entries(file), [["ONE", { key: KEY_2, provider: "Meta", disabled: true }]]);
+  lib.removeNamedKey(file, "ONE", fakeCrypto());
+  lib.saveNamedKey(file, "ONE", KEY_2, fakeCrypto(), "Meta");
+  assert.deepEqual(entries(file), [["ONE", { key: KEY_2, provider: "Meta" }]]);
+});
+
+test("disabled keys: nothing is written for an unknown name or an unreadable file, and results hold no key", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  assert.equal(lib.setNamedKeyDisabled(file, "One", true, fakeCrypto()).stored, false);
+  assert.ok(!fs.existsSync(file));
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  const before = fs.readFileSync(file);
+  for (const name of ["Gone", 7, null]) {
+    const r = lib.setNamedKeyDisabled(file, name, true, fakeCrypto());
+    assert.equal(r.stored, false);
+    assert.ok(!JSON.stringify(r).includes(FAKE));
+  }
+  const unreadable = { ...fakeCrypto(), decryptString: () => { throw new Error("bad data"); } };
+  assert.equal(lib.setNamedKeyDisabled(file, "One", true, unreadable).stored, false);
+  assert.ok(fs.readFileSync(file).equals(before), "the file is left alone");
+});
+
+test("disabled keys: an older file with no flag loads with nothing disabled", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  fs.writeFileSync(file, fakeCrypto().encryptString(JSON.stringify({ version: 1, keys: { One: FAKE }, providers: { One: "Meta" } })));
+  assert.equal(lib.loadKeyEntries(file, fakeCrypto()).get("One").disabled, undefined);
+  fs.writeFileSync(file, fakeCrypto().encryptString(JSON.stringify({ version: 1, keys: { One: FAKE }, disabled: "One" })));
+  assert.equal(lib.loadKeyEntries(file, fakeCrypto()).get("One").disabled, undefined, "a malformed flag is ignored");
+});
+
+test("the preload exposes one more call, and restore sends the flag in one request", () => {
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  assert.deepEqual([...preload.matchAll(/^  (\w+): \(/gm)].map((m) => m[1]), ["notify", "saveKey", "setKeyDisabled", "removeKey"]);
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.match(main, /"\/api\/key", \{ name, key, provider, disabled \}/);
+  assert.match(main, /eco:setKeyDisabled[\s\S]{0,120}fromApp\(event\)/);
+});
+
 test("providers: replacing a name replaces its label; an unknown label stores nothing", (t) => {
   const file = path.join(tempDir(t), "model-key.enc");
   lib.saveNamedKey(file, "Mine", FAKE, fakeCrypto(), "Meta");
@@ -484,7 +540,7 @@ test("the bridge passes the provider on, and the save handler refuses other orig
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   assert.match(main, /"eco:saveKey", \(event, name, key, provider\) => \{\s+if \(!fromApp\(event\)\) return \{ stored: false/);
   assert.match(main, /"eco:removeKey", \(event, name\) => \{\s+if \(!fromApp\(event\)\) return \{ removed: false/);
-  assert.match(main, /"\/api\/key", \{ name, key, provider \}/);
+  assert.match(main, /"\/api\/key", \{ name, key, provider, disabled \}/);
 });
 
 function pagePart(name) {
@@ -530,8 +586,12 @@ test("add rung: a second copy gets its own id and a distinct name", () => {
 
 test("colours: Default ignores a saved colour, Custom uses it, and only valid hex gets through", () => {
   const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
-  const consts = ["HEX", "EFFORT_BLUE", "PALETTE"].map((n) => new RegExp(`const ${n} = .*;`).exec(page)[0]).join("\n");
-  const fn = new Function(`${consts}\n${pagePart("validHex")}\n${pagePart("colorsFor")}\nreturn { validHex, contrastOnCard, colorsFor, EFFORT_BLUE, HEX };`)();
+  const consts = ["HEX", "HEX_DARK", "EFFORT_BLUE", "EFFORT_BLUE_DARK", "PALETTE", "PALETTE_DARK"].map((n) => new RegExp(`const ${n} = .*;`).exec(page)[0]).join("\n");
+  const view = { theme: "light" };
+  let card = "#FFFFFF";
+  const fn = new Function("view", "card", `const document = { documentElement: { dataset: view } };
+    function activeCard() { return card(); }
+    ${consts}\n${pagePart("isDark")}\n${pagePart("shades")}\n${pagePart("validHex")}\n${pagePart("colorsFor")}\nreturn { validHex, contrastOnCard, colorsFor, EFFORT_BLUE, EFFORT_BLUE_DARK, HEX, HEX_DARK };`)(view, () => card);
   const tiers = [{ id: "pi", kind: "local", color: "#882255" }, { id: "pc", kind: "local" },
                  { id: "cloud", kind: "cloud", provider: "meta", flags: { effort: "high" }, color: "#0F6E84" },
                  { id: "bad", kind: "local", color: "red;background:url(x)" }];
@@ -549,6 +609,13 @@ test("colours: Default ignores a saved colour, Custom uses it, and only valid he
   assert.ok(Math.abs(fn.contrastOnCard("#FFFFFF") - 1) < 0.01);
   assert.ok(fn.contrastOnCard("#8ECBF1") < 3, "pale: refused");
   assert.ok(fn.contrastOnCard("#882255") >= 3, "dark enough");
+  view.theme = "dark";
+  card = "#1F2126";
+  assert.equal(fn.colorsFor(tiers, "default").cloud, fn.EFFORT_BLUE_DARK.high, "dark mode has its own shades");
+  assert.equal(fn.colorsFor(tiers, "default").pi, fn.HEX_DARK.pi);
+  assert.deepEqual([fn.colorsFor(tiers, "custom").pi, fn.colorsFor(tiers, "custom").cloud], ["#882255", "#0F6E84"], "a saved colour stays as saved");
+  assert.ok(fn.contrastOnCard("#882255") < 3, "the same colour is hard to see on the dark card");
+  assert.ok(fn.contrastOnCard("#8ECBF1") >= 3, "and a pale one is fine there");
 });
 
 test("providers: each card preselects its own label in Add a key, and a suggested name follows", () => {
@@ -581,4 +648,102 @@ test("providers: stored labels are shown under the new names and never change", 
     "This key looks like a Claude key, but it is labelled Gemini. Choose Custom.");
   assert.equal(shownLabels("Meta"), "Meta");
   assert.deepEqual(lib.KEY_PROVIDERS, ["Meta", "OpenAI", "Claude (Anthropic)", "Gemini (Google)", "Other"]);
+});
+
+test("unreadable keys: the file moves aside with its bytes unchanged, and a new key can then be saved", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  const unreadable = { ...fakeCrypto(), decryptString: () => { throw new Error("bad data"); } };
+  assert.equal(lib.setAsideUnreadableKeys(file, unreadable), "none", "no file");
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  const before = fs.readFileSync(file);
+  assert.equal(lib.setAsideUnreadableKeys(file, fakeCrypto()), "none", "a readable file stays");
+  assert.ok(fs.readFileSync(file).equals(before));
+  assert.equal(lib.setAsideUnreadableKeys(file, unreadable), "aside");
+  assert.ok(!fs.existsSync(file));
+  assert.ok(fs.readFileSync(`${file}.unreadable`).equals(before));
+  assert.deepEqual(lib.saveNamedKey(file, "New", FAKE, fakeCrypto(), "Meta"), { stored: true });
+  assert.ok(fs.readFileSync(`${file}.unreadable`).equals(before), "saving leaves the old file alone");
+  assert.equal(lib.setAsideUnreadableKeys(file, unreadable), "aside");
+  assert.ok(fs.existsSync(`${file}.unreadable-2`), "an earlier one is not overwritten");
+  assert.ok(fs.readFileSync(`${file}.unreadable`).equals(before));
+});
+
+test("unreadable keys: a file that decrypts to no keys counts too, and with encryption off it stays in place", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  const before = fs.readFileSync(file);
+  assert.equal(lib.setAsideUnreadableKeys(file, fakeCrypto(false)), "kept");
+  assert.ok(fs.readFileSync(file).equals(before));
+  assert.ok(!fs.existsSync(`${file}.unreadable`));
+  fs.writeFileSync(file, fakeCrypto().encryptString("{}"));
+  assert.equal(lib.setAsideUnreadableKeys(file, fakeCrypto()), "aside");
+});
+
+test("unreadable keys: a save never overwrites them, and says so without the key", (t) => {
+  const file = path.join(tempDir(t), "model-key.enc");
+  lib.saveNamedKey(file, "One", FAKE, fakeCrypto(), "Meta");
+  const before = fs.readFileSync(file);
+  const unreadable = { ...fakeCrypto(), decryptString: () => { throw new Error("bad data"); } };
+  const r = lib.saveNamedKey(file, "New", "made-up-other-key-0002", unreadable, "Meta");
+  assert.deepEqual(r, { stored: false, reason: "not stored: the keys already stored could not be read" });
+  assert.ok(fs.readFileSync(file).equals(before));
+  assert.equal(lib.saveNamedKey(file, "New", "made-up-other-key-0002", fakeCrypto(false), "Meta").reason, "not stored: encryption is not available on this computer");
+  assert.ok(fs.readFileSync(file).equals(before));
+});
+
+test("unreadable keys: the app checks before it loads, and tells the page only the file's state", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const launch = main.split("async function launch")[1];
+  assert.ok(launch.indexOf("setAsideUnreadableKeys") < launch.indexOf("loadKeyEntries"));
+  assert.match(main, /stored\.size > 0 \? "\?stored=1" : keysProblem \? `\?keys=\$\{keysProblem\}` : ""/);
+  assert.match(main, /if \(result\.stored\) keysProblem = null;/);
+});
+
+// Text pairs need 4.5:1 and controls 3:1, in both themes. Card borders and dividers are decorative.
+function contrastOf(a, b) {
+  const lum = (c) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function themeSets() {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const block = (re) => Object.fromEntries([...re.exec(page)[1].matchAll(/(--[\w-]+): (#[0-9A-Fa-f]{6});/g)].map((m) => [m[1], m[2]]));
+  const light = block(/:root \{([\s\S]*?)\n  \}/);
+  const dark = { ...light, ...block(/:root\[data-theme="dark"\] \{([\s\S]*?)\n  \}/) };
+  const value = (n) => new Function(`return ${new RegExp(`const ${n} = ([\\s\\S]*?);\\n`).exec(page)[1]};`)();
+  return { page, light, dark, value };
+}
+
+test("theme: text and controls meet the contrast rule in both themes", () => {
+  const { light, dark } = themeSets();
+  const text = [["--ink", "--card"], ["--ink", "--paper"], ["--ink", "--field"], ["--ink", "--sunk"], ["--muted", "--card"], ["--muted", "--paper"], ["--muted", "--sunk"],
+                ["--pi", "--card"], ["--chigh", "--card"], ["--slate", "--card"], ["--warn-text", "--card"], ["--placeholder", "--field"], ["--placeholder", "--card"],
+                ["--disabled-text", "--disabled-bg"], ["--on-ink", "--ink"], ["--on-ink", "--slate"], ["--on-amber", "--amber"]];
+  const controls = [["--field-line", "--card"], ["--field-line", "--field"], ["--track", "--card"], ["--knob", "--track"], ["--knob", "--amber"], ["--amber", "--card"],
+                    ["--pc", "--card"], ["--pi", "--paper"], ["--slate", "--bar"]];
+  for (const [name, set] of [["light", light], ["dark", dark]]) {
+    for (const [a, b] of text) assert.ok(contrastOf(set[a], set[b]) >= 4.5, `${name}: ${a} on ${b} is ${contrastOf(set[a], set[b]).toFixed(2)}`);
+    for (const [a, b] of controls) assert.ok(contrastOf(set[a], set[b]) >= 3, `${name}: ${a} on ${b} is ${contrastOf(set[a], set[b]).toFixed(2)}`);
+  }
+});
+
+test("theme: every rung colour and swatch stands out on its own card, and more effort means more contrast", () => {
+  const { light, dark, value } = themeSets();
+  for (const [suffix, card] of [["", light["--card"]], ["_DARK", dark["--card"]]]) {
+    const blue = value(`EFFORT_BLUE${suffix}`), swatches = value(`SWATCHES${suffix}`), hex = value(`HEX${suffix}`), palette = value(`PALETTE${suffix}`);
+    const blues = ["minimal", "low", "medium", "high"].map((k) => contrastOf(blue[k], card));
+    assert.deepEqual(blues, [...blues].sort((a, b) => a - b), `blues on ${card}`);
+    for (const c of [...Object.values(hex), ...Object.values(blue), ...palette, ...swatches.map((s) => s[1])]) assert.ok(contrastOf(c, card) >= 3, `${c} on ${card}`);
+    assert.equal(new Set(swatches.map((s) => s[1])).size, 12);
+    assert.ok(!swatches.some((s) => s[1] === hex.slate), "slate belongs to the memory rung");
+  }
+});
+
+test("theme: the page has no literal colours outside the token blocks", () => {
+  const { page } = themeSets();
+  const style = page.split("<style>")[1].split("</style>")[0].replace(/:root(\[data-theme="dark"\])? \{[\s\S]*?\n  \}/g, "");
+  assert.deepEqual(style.match(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/g), null);
 });

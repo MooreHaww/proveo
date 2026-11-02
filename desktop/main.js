@@ -4,7 +4,7 @@
 // argument or the environment: it goes to the backend by POST /api/key.
 "use strict";
 
-const { app, BrowserWindow, Notification, ipcMain, safeStorage, session, shell } = require("electron");
+const { app, BrowserWindow, nativeTheme, Notification, ipcMain, safeStorage, session, shell } = require("electron");
 const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
 const http = require("http");
@@ -110,17 +110,22 @@ function stopBackend(b) {
   }
 }
 
+let keysProblem = null;  // "aside" or "kept" while the page should say stored keys could not be read
+
 /** Start (or restart) the backend, restore every stored key, and load the app page. */
 async function launch(hash) {
+  const unreadable = lib.setAsideUnreadableKeys(keyFile(), safeStorage);
+  if (unreadable !== "none") keysProblem = unreadable;
   let stored = lib.loadKeyEntries(keyFile(), safeStorage);
-  if (stored.size === 0 && fs.existsSync(keyFile())) console.log("The stored keys could not be decrypted; starting without them.");
+  if (keysProblem) console.log("The stored keys could not be decrypted; starting without them.");
   try {
     const b = await startBackend(stored.size > 0);
-    for (const [name, { key, provider }] of stored) {
-      const status = await request(b.port, "POST", "/api/key", { name, key, provider });
+    for (const [name, { key, provider, disabled }] of stored) {
+      const status = await request(b.port, "POST", "/api/key", { name, key, provider, disabled });  // one request, so a disabled key is never usable
       if (status !== 200) console.log(`Restoring a stored key failed (HTTP ${status}).`);
     }
-    if (win) await win.loadURL(`${b.origin}/${stored.size > 0 ? "?stored=1" : ""}${hash || ""}`);
+    const query = stored.size > 0 ? "?stored=1" : keysProblem ? `?keys=${keysProblem}` : "";
+    if (win) await win.loadURL(`${b.origin}/${query}${hash || ""}`);
   } finally {
     stored = null;
   }
@@ -152,7 +157,7 @@ function appOrigin() {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 860, minWidth: 900, minHeight: 600, icon: ICON, title: "Proveo",
-    backgroundColor: "#F7F6F1",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#15161A" : "#FAF9F5",  // the page's --paper
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false, spellcheck: false,
@@ -192,11 +197,17 @@ ipcMain.handle("eco:notify", (event, title, body) => {
 ipcMain.handle("eco:saveKey", (event, name, key, provider) => {
   if (!fromApp(event)) return { stored: false, reason: "not stored: the request did not come from the app page" };
   const result = lib.saveNamedKey(keyFile(), name, key, safeStorage, provider);
+  if (result.stored) keysProblem = null;
   if (result.stored && !backend.allowCloud) {  // cloud permission is fixed per backend run
     result.restarting = true;
     scheduleRestart();
   }
   return result;
+});
+
+ipcMain.handle("eco:setKeyDisabled", (event, name, disabled) => {
+  if (!fromApp(event)) return { stored: false, reason: "not stored: the request did not come from the app page" };
+  return lib.setNamedKeyDisabled(keyFile(), name, disabled, safeStorage);
 });
 
 ipcMain.handle("eco:removeKey", (event, name) => {

@@ -18,6 +18,7 @@ KINDS = ("local", "cloud")
 PROVIDERS = ("meta", "openai_compatible")  # openai_compatible cloud is UNTESTED
 PERIODS = ("month",)
 COLOR_MODES = ("default", "custom")
+THEMES = ("light", "dark")
 COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 TIER_FIELDS = {"id", "name", "kind", "provider", "base_url", "model", "flags", "enabled",
                "price_in_per_m", "price_out_per_m", "key_name", "color"}
@@ -64,6 +65,32 @@ def data_dir():
 
 def settings_path():
     return os.path.join(data_dir(), "settings.json")
+
+
+def ui_path():
+    return os.path.join(data_dir(), "ui.json")
+
+
+def load_theme():
+    """The chosen theme, or None to follow the system. A missing or broken file means no choice."""
+    try:
+        with open(ui_path(), encoding="utf-8") as f:
+            theme = json.load(f).get("theme")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return theme if theme in THEMES else None
+
+
+def save_theme(theme):
+    """Beside settings.json, not in it: saving that file would hide the first-run card."""
+    if theme not in THEMES:
+        raise ValueError(f"theme must be one of {', '.join(THEMES)}")
+    os.makedirs(data_dir(), exist_ok=True)
+    tmp = ui_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"theme": theme}, f)
+    os.replace(tmp, ui_path())
+    return theme
 
 
 def _base_url(chat_url):

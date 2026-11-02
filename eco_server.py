@@ -15,6 +15,7 @@ import os
 import re
 import socket
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -100,10 +101,12 @@ class EcoApp:
         self._keys = {DEFAULT_KEY_NAME: env_key} if env_key else {}
         self._key_providers = {DEFAULT_KEY_NAME: eco_core.stored_key_label(env_key, eco_core.META_PROVIDER)} if env_key else {}
         self._seen_keys = {env_key} if env_key else set()
+        self._disabled = set()  # names of keys that stay stored but are never used
 
-    def set_key(self, name, key, provider=None):
+    def set_key(self, name, key, provider=None, disabled=None):
         """Add a named key, or replace the one with that name (ignoring case). Returns the name.
-        provider is a label from eco_core.KEY_PROVIDERS; None follows eco_core.key_provider."""
+        provider is a label from eco_core.KEY_PROVIDERS; None follows eco_core.key_provider.
+        disabled None keeps the flag of the key it replaces, so a replacement can't start spending by itself."""
         if provider is not None and provider not in eco_core.KEY_PROVIDERS:
             raise ValueError(f"provider must be one of: {', '.join(eco_core.KEY_PROVIDERS)}")
         with self.lock:
@@ -117,11 +120,23 @@ class EcoApp:
             problem = eco_core.key_label_problem(key, label)
             if problem:
                 raise ValueError(problem)
+            was_off = any(n.casefold() == clean.casefold() for n in self._disabled)
             self._forget_name(clean)
             self._keys[clean] = key
             self._key_providers[clean] = label
             self._seen_keys.add(key)
+            if was_off if disabled is None else disabled:
+                self._disabled.add(clean)
         return clean
+
+    def set_key_disabled(self, name, disabled):
+        """The key stays stored either way. Returns its name."""
+        with self.lock:
+            found = eco_core.find_key_name(name.strip(), self._keys)
+            if not found:
+                raise ValueError("no key has that name")
+            (self._disabled.add if disabled else self._disabled.discard)(found)
+        return found
 
     def remove_key(self, name):
         """Removing a name that isn't there is fine: the result is the same."""
@@ -132,6 +147,7 @@ class EcoApp:
         for existing in [n for n in self._keys if n.casefold() == name.strip().casefold()]:
             del self._keys[existing]
             del self._key_providers[existing]
+            self._disabled.discard(existing)
 
     def _key_copy(self):
         with self.lock:
@@ -141,15 +157,19 @@ class EcoApp:
         with self.lock:
             return dict(self._key_providers)
 
+    def _disabled_copy(self):
+        with self.lock:
+            return set(self._disabled)
+
     def key_status(self):
-        """Names, providers and the rungs using each. Never any part of a key: no length, no last 4."""
-        keys, providers = self._key_copy(), self._provider_copy()
+        """Names, providers, the disabled flag and the rungs each holds. Never any part of a key: no length, no last 4."""
+        keys, providers, off = self._key_copy(), self._provider_copy(), self._disabled_copy()
         try:
             tiers = [t for t in settings.load()["tiers"] if t["kind"] == "cloud"]
         except ValueError:
             tiers = []
-        return {"keys": [{"name": n, "provider": eco_core.key_provider(n, providers),
-                          "rungs": [t["name"] for t in tiers if eco_core.key_name_for_tier(t, keys, providers)[0] == n]}
+        return {"keys": [{"name": n, "provider": eco_core.key_provider(n, providers), "disabled": n in off,
+                          "rungs": [t["name"] for t in tiers if eco_core.key_name_held_for_tier(t, keys, providers, off) == n]}
                          for n in sorted(keys, key=str.casefold)]}
 
     def secrets(self):
@@ -158,7 +178,7 @@ class EcoApp:
 
     def settings_ladder(self):
         return eco_core.build_tiers(settings.load(), keys=self._key_copy(), allow_cloud=self.allow_cloud,
-                                    providers=self._provider_copy())
+                                    providers=self._provider_copy(), disabled=self._disabled_copy())
 
     def settings_cloud_tier(self):
         """Eco off: the first enabled cloud tier, or None."""
@@ -166,13 +186,14 @@ class EcoApp:
 
     def settings_view(self):
         # saved: False until the settings file exists (the page shows its first-run card).
-        current, keys, providers = settings.load(), self._key_copy(), self._provider_copy()
+        current, keys, providers, off = settings.load(), self._key_copy(), self._provider_copy(), self._disabled_copy()
         rung_keys = {}
         for t in current["tiers"]:
             if t["kind"] == "cloud":
-                name, reason = eco_core.key_name_for_tier(t, keys, providers)
+                name, reason = eco_core.key_name_for_tier(t, keys, providers, off)
                 rung_keys[t["id"]] = {"key_name": name, "reason": reason}
         return {**current, "key_set": bool(keys), "key_names": sorted(keys, key=str.casefold), "rung_keys": rung_keys,
+                "key_disabled": sorted(off, key=str.casefold),
                 "key_providers": {n: eco_core.key_provider(n, providers) for n in keys},
                 "max_tiers": settings.MAX_TIERS, "providers": PROVIDERS,
                 "saved": os.path.exists(settings.settings_path()), "defaults": settings.default_settings()["tiers"]}
@@ -218,6 +239,22 @@ class EcoApp:
         if not self.allow_cloud:
             return CLOUD_DISABLED
         return self.budget_status(pending)["reason"]
+
+    def rungs_status(self):
+        """Each saved local rung and whether its server answers, checked at once so many rungs take no longer
+        than one. Read-only: no model call, no key, and cloud rungs are never contacted."""
+        rungs = [t for t in settings.load()["tiers"] if t["kind"] == "local"]
+        answers = {}
+
+        def check(t):
+            answers[t["id"]] = detect.rung_running(t["base_url"])
+        threads = [threading.Thread(target=check, args=(t,), daemon=True) for t in rungs]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + detect.RUNNING_TIMEOUT + 0.1  # a socket timeout is per read, so a slow drip stops here
+        for thread in threads:
+            thread.join(max(0, deadline - time.monotonic()))
+        return {"rungs": [{"id": t["id"], "running": answers.get(t["id"], False)} for t in rungs]}
 
     def detect(self, address=None):
         if address:
@@ -452,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/assets/"):
                 return self._asset(path[len("/assets/"):])
             if path == "/api/config":
-                return self._json({"cloud_enabled": self.app.allow_cloud, "cloud_effort": "minimal"})
+                return self._json({"cloud_enabled": self.app.allow_cloud, "cloud_effort": "minimal", "theme": settings.load_theme()})
             if path == "/api/tasks":
                 return self._json({"tasks": self.app.list_tasks()})
             if path == "/api/stats":
@@ -465,6 +502,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.settings_view())
             if path == "/api/budget":
                 return self._json(self.app.budget_status())
+            if path == "/api/rungs/status":
+                return self._json(self.app.rungs_status())
             if path == "/api/key/status":
                 return self._json(self.app.key_status())
             if path.startswith("/api/jobs/"):
@@ -492,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             self._drain()
             return self._json({"error": "send JSON"}, 415)
-        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/settings/check", "/api/detect", "/api/key", "/api/key/remove"}
+        routes = {"/api/memory/clear", "/api/solve", "/api/settings", "/api/settings/check", "/api/detect", "/api/key", "/api/key/remove", "/api/key/disable", "/api/theme"}
         if self.path not in routes:
             return self._json({"error": "not found"}, 404)
         try:
@@ -509,8 +548,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.detect(req.get("address")))
             if self.path == "/api/key":
                 # The key is never echoed, not even in an error message.
-                if set(req) in ({"name", "key"}, {"name", "key", "provider"}) and valid_key(req["key"]):
-                    self.app.set_key(req["name"], req["key"], req.get("provider"))
+                if set(req) - {"provider", "disabled"} == {"name", "key"} and valid_key(req["key"]) and isinstance(req.get("disabled", False), bool):
+                    self.app.set_key(req["name"], req["key"], req.get("provider"), req.get("disabled"))
                     return self._json(self.app.key_status())
                 # The old single-key request still works and answers as it did: the name is "Default".
                 if set(req) == {"key"} and valid_key(req["key"]):
@@ -525,6 +564,15 @@ class Handler(BaseHTTPRequestHandler):
                 if set(req) != {"name"} or not isinstance(req["name"], str):
                     raise ValueError('send {"name": "<the key\'s name>"}')
                 self.app.remove_key(req["name"])
+                return self._json(self.app.key_status())
+            if self.path == "/api/theme":
+                if set(req) != {"theme"} or not isinstance(req["theme"], str):
+                    raise ValueError('send {"theme": "light" or "dark"}')
+                return self._json({"theme": settings.save_theme(req["theme"])})
+            if self.path == "/api/key/disable":
+                if set(req) != {"name", "disabled"} or not isinstance(req["name"], str) or not isinstance(req["disabled"], bool):
+                    raise ValueError('send {"name": "<the key\'s name>", "disabled": true or false}')
+                self.app.set_key_disabled(req["name"], req["disabled"])
                 return self._json(self.app.key_status())
             if "custom" in req:
                 if "task_file" in req or "task_id" in req:

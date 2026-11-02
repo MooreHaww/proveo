@@ -258,7 +258,7 @@ class PageCopy(unittest.TestCase):
         self.assertIn("<title>Proveo</title>", self.page)
         self.assertIn('<span class="logo-name">Proveo</span>', self.page)
         self.assertIn("<h1>Proveo</h1>", self.page)
-        self.assertIn('<h2 class="title">Proveo</h2>', self.page)
+        self.assertNotIn('<h2 class="title">Proveo</h2>', self.page, "the top bar already says it")
         self.assertIn('<p class="pitch">Let your tests choose the model. Cheapest first.</p>', self.page)
         self.assertEqual(self.page.count("pi-edge-router"), 1, "only in the repository link")
         html =self.page.split("<script>")[0]
@@ -267,7 +267,7 @@ class PageCopy(unittest.TestCase):
 
     def test_the_about_version_matches_the_app(self):
         with open(os.path.join(os.path.dirname(PAGE), "..", "desktop", "package.json"), encoding="utf-8") as f:
-            self.assertIn(f"Version {json.load(f)['version']}<", self.page)
+            self.assertIn(f"<h2>Version</h2>\n          <p class=\"num\">{json.load(f)['version']}</p>", self.page)
 
     def about(self):
         return self.page.split('id="screen-about"')[1].split("</main>")[0]
@@ -322,7 +322,7 @@ class PagePresets(unittest.TestCase):
 
     def test_the_page_uses_the_same_key_rule_as_the_backend(self):
         self.assertIn(f'const DEFAULT_META_HOST = "{eco_core.DEFAULT_META_HOST}";', self.page)
-        self.assertIn("metaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${metaKeys()[0]})` : \"Choose a key\"", self.page)
+        self.assertIn("usableMetaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${usableMetaKeys()[0]})` : \"Choose a key\"", self.page)
         self.assertIn(f'const META_KEY_REFUSAL = "{eco_core.META_KEY_REFUSAL}";', self.page)
 
     def test_the_provider_labels_are_the_same_everywhere(self):

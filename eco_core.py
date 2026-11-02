@@ -29,6 +29,7 @@ LOCAL_PORTS = {11434: "Ollama", 8080: "llama.cpp", 8081: "llama.cpp", 1234: "LM 
 CLOUD_OFF_REASON = "cloud disabled (ALLOW_CLOUD is not 1)"
 NO_KEY_REASON = "No API key set yet"
 CHOOSE_KEY_REASON = "Choose a key"
+DISABLED_KEY_REASON = "Key disabled"
 DEFAULT_KEY_NAME = "Default"  # a key with no name: MODEL_API_KEY, or the old {"key": ...} request
 DEFAULT_META_HOST = "api.meta.ai"
 META_PROVIDER = "Meta"
@@ -163,7 +164,7 @@ def meta_key_refusal(cfg, name, providers=None):
 
 def is_key_wait(reason):
     """True if a skipped rung is only waiting for a usable key."""
-    return reason in (NO_KEY_REASON, CHOOSE_KEY_REASON) or reason.startswith(META_KEY_REFUSAL)
+    return reason in (NO_KEY_REASON, CHOOSE_KEY_REASON, DISABLED_KEY_REASON) or reason.startswith(META_KEY_REFUSAL)
 
 
 def find_key_name(wanted, keys):
@@ -171,25 +172,45 @@ def find_key_name(wanted, keys):
     return next((n for n in keys if n.casefold() == wanted.casefold()), None)
 
 
-def key_name_for_tier(cfg, keys, providers=None):
+def key_name_for_tier(cfg, keys, providers=None, disabled=()):
     """(the name of the key this cloud tier uses or None, why it has none or "").
 
     keys is {name: key}, providers is {name: provider label} (see key_provider). A tier with a
     key_name only ever uses that key, ignoring case: if it was removed the tier waits, it never falls
     back to another. A tier with no key_name gets no key, except that the default Meta rung uses the
     only Meta key if there is exactly one. A rung on the Meta host never gets a key for anyone else.
+    disabled holds the names of keys that stay stored but are never used: a rung naming one waits and
+    never falls back, and one does not count as a Meta key for that exception.
     """
+    off = {n.casefold() for n in disabled}
     wanted = cfg.get("key_name")
     if wanted:
         found = find_key_name(wanted, keys)
         if not found:
             return None, NO_KEY_REASON
         refusal = meta_key_refusal(cfg, found, providers)
-        return (None, refusal) if refusal else (found, "")
+        if refusal:
+            return None, refusal
+        return (None, DISABLED_KEY_REASON) if found.casefold() in off else (found, "")
     meta_keys = [n for n in keys if key_provider(n, providers) == META_PROVIDER]
-    if len(meta_keys) == 1 and may_use_only_key(cfg):
-        return meta_keys[0], ""
+    usable = [n for n in meta_keys if n.casefold() not in off]
+    if may_use_only_key(cfg):
+        if len(usable) == 1:
+            return usable[0], ""
+        if meta_keys and not usable:
+            return None, DISABLED_KEY_REASON
     return None, CHOOSE_KEY_REASON if keys else NO_KEY_REASON
+
+
+def key_name_held_for_tier(cfg, keys, providers=None, disabled=()):
+    """The name of the key this tier uses, or the disabled key it waits for, or None."""
+    name, reason = key_name_for_tier(cfg, keys, providers, disabled)
+    if name or reason != DISABLED_KEY_REASON:
+        return name
+    if cfg.get("key_name"):
+        return find_key_name(cfg["key_name"], keys)
+    meta_keys = [n for n in keys if key_provider(n, providers) == META_PROVIDER]
+    return meta_keys[0] if len(meta_keys) == 1 else None
 
 
 def tier_from_config(cfg, key="", allow_cloud=None, wait_reason=""):
@@ -220,11 +241,11 @@ def tier_from_config(cfg, key="", allow_cloud=None, wait_reason=""):
     return Tier(cfg["id"], cfg["kind"], ask, wait_reason=wait_reason)
 
 
-def build_tiers(config, key="", allow_cloud=None, keys=None, providers=None):
+def build_tiers(config, key="", allow_cloud=None, keys=None, providers=None, disabled=()):
     """The enabled tiers of a settings dict, in order.
 
     keys ({name: key}) gives each cloud tier only its own key, and a local tier none. A plain key
-    counts as the only key, named Default. providers is {name: provider label}.
+    counts as the only key, named Default. providers is {name: provider label}. disabled names keys never to use.
     """
     if keys is None and key:
         keys = {DEFAULT_KEY_NAME: key}
@@ -236,7 +257,7 @@ def build_tiers(config, key="", allow_cloud=None, keys=None, providers=None):
         if keys is None or t["kind"] != "cloud":
             tiers.append(tier_from_config(t, "", allow_cloud))
         else:
-            name, reason = key_name_for_tier(t, keys, providers)
+            name, reason = key_name_for_tier(t, keys, providers, disabled)
             tiers.append(tier_from_config(t, keys[name] if name else "", allow_cloud, reason))
     return tiers
 

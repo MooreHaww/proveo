@@ -201,7 +201,7 @@ class KeyApi(KeyCase):
         self.start()
         self.assertEqual(self.status(), {"keys": []})
         status, body = self.post("/api/key", {"name": " Meta personal ", "key": KEY_A, "provider": "Meta"})
-        self.assertEqual((status, body), (200, {"keys": [{"name": "Meta personal", "provider": "Meta", "rungs": ["Meta Muse Spark 1.3"]}]}),
+        self.assertEqual((status, body), (200, {"keys": [{"name": "Meta personal", "provider": "Meta", "disabled": False, "rungs": ["Meta Muse Spark 1.3"]}]}),
                          "the default ladder's cloud rung uses the only Meta key")
         self.post("/api/key", {"name": "Claude key", "key": KEY_B})
         self.assertEqual([k["name"] for k in self.status()["keys"]], ["Claude key", "Meta personal"])
@@ -224,8 +224,8 @@ class KeyApi(KeyCase):
         self.request("/api/key", {"name": "Two", "key": KEY_B})
         text = self.request("/api/key/status")[1]
         self.assert_no_key_material(text, KEY_A, KEY_B)
-        self.assertEqual(json.loads(text), {"keys": [{"name": "One", "provider": "Other", "rungs": ["C"]},
-                                                     {"name": "Two", "provider": "Other", "rungs": []}]},
+        self.assertEqual(json.loads(text), {"keys": [{"name": "One", "provider": "Other", "disabled": False, "rungs": ["C"]},
+                                                     {"name": "Two", "provider": "Other", "disabled": False, "rungs": []}]},
                          "exactly names, providers and rungs: no length, no last 4, no other field")
         self.assertNotIn(str(len(KEY_A)), text)
         for path in ("/", "/api/settings", "/api/config", "/api/budget", "/api/memory", "/api/stats"):
@@ -273,8 +273,8 @@ class KeyApi(KeyCase):
         self.assertIsNone(lan.requests[0]["auth"])
         self.assertEqual([r["auth"] for r in one.requests], ["Bearer " + KEY_A])
         self.assertEqual([r["auth"] for r in two.requests], ["Bearer " + KEY_B])
-        self.assertEqual(self.status(), {"keys": [{"name": "One", "provider": "Other", "rungs": ["C1"]},
-                                                  {"name": "Two", "provider": "Other", "rungs": ["C2"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "One", "provider": "Other", "disabled": False, "rungs": ["C1"]},
+                                                  {"name": "Two", "provider": "Other", "disabled": False, "rungs": ["C2"]}]})
         with open(os.path.join(self.data_dir, "settings.json"), encoding="utf-8") as f:
             saved = f.read()
         with open(self.log, encoding="utf-8") as f:
@@ -289,7 +289,7 @@ class KeyApi(KeyCase):
         self.assertEqual(view["rung_keys"], {"c": {"key_name": None, "reason": "No API key set yet"}})
 
         self.post("/api/key", {"name": "One", "key": KEY_A})
-        self.assertEqual(self.status(), {"keys": [{"name": "One", "provider": "Other", "rungs": []}]}, "the only key is not used by it")
+        self.assertEqual(self.status(), {"keys": [{"name": "One", "provider": "Other", "disabled": False, "rungs": []}]}, "the only key is not used by it")
         state = self.done()
         self.assertEqual(state["skip_reasons"], {"c": "Choose a key"})
         self.assertEqual(srv.requests, [], "nothing is sent")
@@ -309,7 +309,7 @@ class KeyApi(KeyCase):
         self.post("/api/key", {"name": "One", "key": KEY_A})
         self.post("/api/key", {"name": "Two", "key": KEY_B})
         self.post("/api/settings", {"tiers": [cloud_tier("c", srv, "One")]})
-        self.assertEqual(self.status()["keys"][0], {"name": "One", "provider": "Other", "rungs": ["C"]})
+        self.assertEqual(self.status()["keys"][0], {"name": "One", "provider": "Other", "disabled": False, "rungs": ["C"]})
         self.post("/api/key/remove", {"name": "One"})
 
         state = self.done()
@@ -357,7 +357,7 @@ class KeyApi(KeyCase):
         self.start(allow_cloud=True)
         self.post("/api/settings", {"tiers": [cloud_tier("c", srv, "Default")]})
         self.assertEqual(self.post("/api/key", {"key": KEY_A}), (200, {"set": True}))
-        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "rungs": ["C"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "disabled": False, "rungs": ["C"]}]})
         self.assertEqual(self.done()["result"]["solved_by"], "c")
         self.assertEqual(srv.requests[-1]["auth"], "Bearer " + KEY_A)
         self.post("/api/key", {"name": "Other", "key": KEY_B})
@@ -367,7 +367,7 @@ class KeyApi(KeyCase):
     def test_model_api_key_at_start_is_default(self):
         os.environ["MODEL_API_KEY"] = KEY_A
         self.start()
-        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "rungs": ["Meta Muse Spark 1.3"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "disabled": False, "rungs": ["Meta Muse Spark 1.3"]}]})
         self.assertIn(KEY_A, self.server.app.secrets())
 
     def test_remove_endpoint_has_the_same_guards(self):
@@ -397,7 +397,7 @@ class KeyRouting(KeyCase):
         self.assertIsNone(next_rung.requests[0]["auth"])
         view = json.loads(self.request("/api/settings")[1])
         self.assertEqual(view["rung_keys"]["custom"], {"key_name": None, "reason": "Choose a key"})
-        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Other", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Other", "disabled": False, "rungs": []}]})
 
     def test_eco_off_does_not_send_it_either(self):
         srv, = self.servers(GOOD)
@@ -416,7 +416,7 @@ class KeyRouting(KeyCase):
         self.save(self.default_meta())
         self.assertEqual(self.done()["result"]["solved_by"], "cloud")
         self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
-        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Meta", "rungs": ["Meta Muse Spark 1.3"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Meta", "disabled": False, "rungs": ["Meta Muse Spark 1.3"]}]})
 
     def test_legacy_default_key_on_the_default_ladder(self):
         srv, = self.servers(GOOD)
@@ -469,7 +469,7 @@ class KeyRouting(KeyCase):
         state = self.done()
         self.assertEqual(state["skip_reasons"], {"cloud": "Choose a key"})
         self.assertEqual(srv.requests, [], "no request, so no Authorization header at all")
-        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Other", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Only", "provider": "Other", "disabled": False, "rungs": []}]})
         # Naming the key is the way to use it there.
         self.save({**edited, "key_name": "Only"})
         self.assertEqual(self.done()["result"]["solved_by"], "cloud")
@@ -510,7 +510,7 @@ class KeyProviders(KeyCase):
             self.assertEqual(state["skip_reasons"], {"cloud": "Choose a key"})
             self.assertEqual(state["attempts"], [])
         self.assertEqual(srv.requests, [], "no request, so no Authorization header at all")
-        self.assertEqual(self.status(), {"keys": [{"name": "Claude key", "provider": "Claude (Anthropic)", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Claude key", "provider": "Claude (Anthropic)", "disabled": False, "rungs": []}]})
         view = json.loads(self.request("/api/settings")[1])
         self.assertEqual(view["rung_keys"]["cloud"], {"key_name": None, "reason": "Choose a key"})
         self.assertEqual(view["key_providers"], {"Claude key": "Claude (Anthropic)"})
@@ -533,7 +533,7 @@ class KeyProviders(KeyCase):
         self.save(self.default_meta())
         self.assertEqual(self.done()["result"]["solved_by"], "cloud")
         self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
-        self.assertEqual(self.status(), {"keys": [{"name": "Meta personal", "provider": "Meta", "rungs": ["Meta Muse Spark 1.3"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Meta personal", "provider": "Meta", "disabled": False, "rungs": ["Meta Muse Spark 1.3"]}]})
 
     def test_the_one_meta_key_is_used_beside_other_providers_and_two_need_a_choice(self):
         srv, = self.servers(GOOD)
@@ -610,7 +610,7 @@ class KeyProviders(KeyCase):
         why = "This rung calls Meta, but that key is for OpenAI"
         self.assertEqual((state["skip_reasons"], state["message"], state["attempts"]), ({"cloud": why}, why, []))
         self.assertEqual(srv.requests, [])
-        self.assertEqual(self.status(), {"keys": [{"name": "Mine", "provider": "OpenAI", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Mine", "provider": "OpenAI", "disabled": False, "rungs": []}]})
         view = json.loads(self.request("/api/settings")[1])
         self.assertEqual(view["rung_keys"]["cloud"], {"key_name": None, "reason": why})
 
@@ -649,7 +649,7 @@ class KeyProviders(KeyCase):
         self.meta_host_is_fake(srv)
         os.environ["MODEL_API_KEY"] = KEY_A
         self.start(allow_cloud=True)
-        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "rungs": ["Meta Muse Spark 1.3"]}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Meta", "disabled": False, "rungs": ["Meta Muse Spark 1.3"]}]})
         self.save(self.default_meta())
         self.assertEqual(self.done()["result"]["solved_by"], "cloud")
         self.assertEqual([r["auth"] for r in srv.requests], ["Bearer " + KEY_A])
@@ -660,7 +660,7 @@ class KeyProviders(KeyCase):
         self.start(allow_cloud=True)
         self.add("Old key", KEY_A)
         self.save(self.default_meta())
-        self.assertEqual(self.status(), {"keys": [{"name": "Old key", "provider": "Other", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Old key", "provider": "Other", "disabled": False, "rungs": []}]})
         self.assertEqual(self.done()["skip_reasons"], {"cloud": "Choose a key"})
         self.assertEqual(srv.requests, [])
 
@@ -672,8 +672,8 @@ class KeyProviders(KeyCase):
         self.add("Two", KEY_B, "Gemini (Google)")
         text = self.request("/api/key/status")[1]
         self.assert_no_key_material(text, KEY_A, KEY_B)
-        self.assertEqual(json.loads(text), {"keys": [{"name": "One", "provider": "OpenAI", "rungs": ["C"]},
-                                                     {"name": "Two", "provider": "Gemini (Google)", "rungs": []}]},
+        self.assertEqual(json.loads(text), {"keys": [{"name": "One", "provider": "OpenAI", "disabled": False, "rungs": ["C"]},
+                                                     {"name": "Two", "provider": "Gemini (Google)", "disabled": False, "rungs": []}]},
                          "exactly names, providers and rungs")
         self.assert_no_key_material(self.request("/api/settings")[1], KEY_A, KEY_B)
 
@@ -787,7 +787,7 @@ class KeyPrefixGuard(KeyCase):
         self.meta_host_is_fake(srv)
         os.environ["MODEL_API_KEY"] = self.LOOKS["Claude (Anthropic)"]
         self.start(allow_cloud=True)
-        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Other", "rungs": []}]})
+        self.assertEqual(self.status(), {"keys": [{"name": "Default", "provider": "Other", "disabled": False, "rungs": []}]})
         self.save(self.default_meta())
         self.assertEqual(self.done()["skip_reasons"], {"cloud": "Choose a key"})
         self.assertEqual(srv.requests, [])

@@ -14,8 +14,9 @@ Built for the Meta Global AI Developer Hackathon. It began as a router (router.p
 ## Architecture map
 - eco_core.py: the ladder. Builds tiers, gives each its key, runs a task up the rungs, writes the log and verified memory.
 - eco_server.py: local server (127.0.0.1 only) with the page and JSON API. Holds keys in memory. eco.py is the command line.
-- settings.py: the tier list and budget in one JSON file. Refuses to save a secret.
-- detect.py: finds local model servers (Ollama, LM Studio, llama.cpp). Read-only.
+- settings.py: the tier list, budget and color_mode (default or custom rung colours) in one JSON file. Refuses to save a secret.
+  The theme choice is apart, in ui.json beside it, because saving settings.json hides the first-run card.
+- detect.py: finds local model servers (Ollama, LM Studio, llama.cpp) and checks if a rung's server answers. Read-only.
 - budget.py: spend guard, read from the log, never estimated. ok, warn from 80%, blocked from 100%.
 - bench_coding.py: model calls and the code checker (`run_tests`, `run_custom_tests`).
 - eco_backend.py: entry point of the bundled backend. Its private `--eco-check` mode is the checker's child process.
@@ -29,6 +30,13 @@ Built for the Meta Global AI Developer Hackathon. It began as a router (router.p
 - eval_local.py: runs data/questions.json through the local model.
 - validate.py: runs a question file through the router's decision rule.
 - data/: question sets and coding tasks. results/: CSV outputs, plus the CLI's Eco log and memory.
+
+## Routes added to the page's JSON API
+- POST /api/key/disable {name, disabled}: returns the key status. GET /api/key/status lists name, provider, disabled and rungs, never the key.
+- GET /api/rungs/status: {rungs: [{id, running}]} for saved local rungs, 1.5 s limit, all at once. No model call, no key, no cloud rung contacted.
+  Running means /v1/models answered, not that the rung's model is loaded. The page checks on opening Models and on Refresh, never on a timer.
+- POST /api/settings/check: checks a ladder without saving it.
+- POST /api/theme {theme}: light or dark, saved in ui.json. GET /api/config returns theme (null until chosen: follow the system).
 
 ## Commands
 Explain before running. The test suites use fake servers and make no real calls.
@@ -73,7 +81,11 @@ cd desktop; npm run dist                                       # build the insta
 - A rung on the api.meta.ai host only ever gets a key marked Meta, even when one is named: saving that pairing is refused,
   and it is checked again when the ladder runs. Other rungs accept any named key; the page warns if the provider differs.
 - A cloud rung without a usable key is skipped, not failed: "Choose a key"; "No API key set yet" when no key is stored
-  or its named key is gone; or "This rung calls Meta, but that key is for <provider>".
+  or its named key is gone; "Key disabled"; or "This rung calls Meta, but that key is for <provider>".
+- A disabled key stays stored and is never used. A rung naming it waits and never falls back to another key.
+  It does not count as the only Meta key, so with two Meta keys and one disabled, the other is used automatically.
+  Replacing a key keeps its flag; removing it clears the flag. In the desktop app the flag is in the same encrypted file,
+  and restore sends key and flag in one POST /api/key, so a disabled key is never briefly usable.
 - Legacy: router.py, bench_coding.py and the CLI read MODEL_API_KEY if the user set it in their own shell.
   The server treats it as the key named "Default". Never set it or pass a key this way yourself.
 - Legacy labels: Default and MODEL_API_KEY count as Meta. Any other key with no label counts as Other.
@@ -82,7 +94,8 @@ cd desktop; npm run dist                                       # build the insta
 - The label is otherwise what the user chose. The app checks only those distinctive prefixes, so a Meta label on an
   unrecognised key still passes and that key can go to Meta.
 - Never put keys in code, files, commits, chat, environment variables, arguments, URLs, logs or responses.
-  The only file a key may reach is the app's encrypted one. Never read or print the contents of any .env file.
+  The only files a key may reach are the app's encrypted one and, if that can't be decrypted, the same bytes moved to
+  model-key.enc.unreadable. Never read or print the contents of any .env file.
 - Cloud endpoint: https://api.meta.ai/v1, model ID `muse-spark-1.3`.
 - Cloud calls cost money: count them in the log, and do not raise an output limit without asking me.
 
@@ -94,6 +107,7 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 | Log | results/eco_log.jsonl | `<profile>/eco/eco_log.jsonl` |
 | Verified memory | results/eco_memory.jsonl | `<profile>/eco/eco_memory.jsonl` |
 | Settings | user_data/settings.json | `<profile>/eco/settings.json` |
+| Theme | user_data/ui.json | `<profile>/eco/ui.json` |
 | Keys | memory only | `<profile>/model-key.enc`, encrypted |
 
 - Installed app profile: `%APPDATA%\Proveo`. An old `%APPDATA%\Eco` moves there once, whole, if the new folder does not exist. `npm start` uses `%APPDATA%\pi-edge-router-desktop`. ECO_DESKTOP_USER_DATA overrides the profile; ECO_DATA_DIR overrides the settings folder.
@@ -105,6 +119,18 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 - Other limits are unchanged and stay small: Meta rungs 3,000, Eco local rungs 500, router.py cloud 1,500.
 - router.py is unchanged by the Eco work. Eco reuses its constants.
 
+## Colours
+- web/index.html has one token block per theme (`:root` and `:root[data-theme="dark"]`) and no literal colours elsewhere in its styles.
+- Text needs 4.5:1 and controls and rung colours 3:1, in both themes. Card borders and dividers are decorative. desktop/test/lib.test.js checks this.
+- Rung colours have light and dark sets: HEX, EFFORT_BLUE, PALETTE, SWATCHES and their _DARK twins. More effort means more contrast against the card.
+- A saved custom colour stays as saved. If it is under 3:1 in the active theme, Models shows "Low contrast".
+
+## Unreadable key file
+- Electron keeps the encryption key in `<profile>/Local State`, written some seconds after the first start, while model-key.enc is written at once.
+  A force-kill, crash or power cut in the first seconds of a brand-new profile loses that key. Measured: lost at 5 s after the first save, kept at 20 s, and kept after any normal close.
+- At start, a key file that gives no keys moves to model-key.enc.unreadable (-2, -3 if taken), bytes unchanged. While encryption is off it stays in place.
+- saveNamedKey refuses to overwrite a file that gives no keys. The page shows "Stored keys could not be read" (?keys=aside or ?keys=kept) until a key is stored or the app closes.
+
 ## Gotchas
 - A Windows child process that inherits a stdin pipe hangs while another thread reads that pipe. Checkers use stdin=DEVNULL.
 - Use the Edit tool, not shell heredocs, for files with backslashes. Heredocs mangle them.
@@ -115,7 +141,7 @@ Spend is the sum of cost_usd for cloud attempts in that setup's own log, this ca
 ## Untested
 - Real OpenAI, Claude and Gemini providers: only fake servers so far. The page has no untested badges; the provider info popover says only Meta Muse Spark has been tested.
 - SmartScreen on a fresh machine. The installer is not code-signed.
-- The default install folder, `%LOCALAPPDATA%\Programs\Proveo`: installs were tested in temp folders.
+- The default install folder, `%LOCALAPPDATA%\Programs\proveo-desktop`: installs were tested in temp folders.
 
 ## Working style
 - The user is new to this stack. Before running commands, explain what you are about to do in one or two sentences.

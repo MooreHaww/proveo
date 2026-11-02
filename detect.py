@@ -18,6 +18,7 @@ KNOWN_SERVERS = [
     ("llama.cpp", 8081, "/v1/models"),
 ]
 TIMEOUT = 1.0
+RUNNING_TIMEOUT = 1.5
 MAX_BYTES = 1_000_000
 MAX_MODELS = 200
 SAME_MACHINE = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # all mean this computer
@@ -89,6 +90,14 @@ def detect_local(host="127.0.0.1", timeout=TIMEOUT, servers=KNOWN_SERVERS):
             found.append({"kind": kind, "port": port, "base_url": f"http://{host}:{port}/v1",
                           "models": models})
     return dedupe_servers(found)
+
+
+def rung_running(base_url, timeout=RUNNING_TIMEOUT):
+    """True if the server behind a local rung's base URL answered /v1/models with a model list.
+    That says the server is up, not that this rung's model is loaded."""
+    base = base_url.strip().rstrip("/")
+    url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+    return _models(_get_json(url, timeout), "/v1/models") is not None
 
 
 def normalize_address(address):

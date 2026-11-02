@@ -166,7 +166,7 @@ function keyLabelProblem(key, label) {
 /** A stored label the key's prefix contradicts becomes Other, so an older file can't send it to Meta. */
 const storedLabel = (key, label) => (keyLabelProblem(key, label) ? "Other" : label);
 
-/** Every stored key as a Map of name to {key, provider}. Empty if there is no file or it cannot be decrypted. */
+/** Every stored key as a Map of name to {key, provider, disabled}. Empty if there is no file or it cannot be decrypted. */
 function loadKeyEntries(file, crypto) {
   const text = readDecrypted(file, crypto);
   const entries = new Map();
@@ -175,8 +175,9 @@ function loadKeyEntries(file, crypto) {
   try { payload = JSON.parse(text); } catch (e) { /* an old single-key file */ }
   if (payload && payload.version === 1 && payload.keys && typeof payload.keys === "object") {
     const labels = payload.providers && typeof payload.providers === "object" ? payload.providers : {};
+    const off = new Set(Array.isArray(payload.disabled) ? payload.disabled : []);
     for (const [name, key] of Object.entries(payload.keys)) {
-      if (validKeyName(name) && validKey(key)) entries.set(name, { key, provider: storedLabel(key, keyProvider(name, labels[name])) });
+      if (validKeyName(name) && validKey(key)) entries.set(name, { key, provider: storedLabel(key, keyProvider(name, labels[name])), ...(off.has(name) ? { disabled: true } : {}) });
     }
   } else if (validKey(text)) {
     entries.set(DEFAULT_KEY_NAME, { key: text, provider: storedLabel(text, "Meta") });
@@ -191,7 +192,8 @@ function loadKeys(file, crypto) {
 
 function writeKeys(file, entries, crypto) {
   const pick = (field) => Object.fromEntries([...entries].map(([name, entry]) => [name, entry[field]]));
-  return writeEncrypted(file, JSON.stringify({ version: 1, keys: pick("key"), providers: pick("provider") }), crypto);
+  const disabled = [...entries].filter(([, entry]) => entry.disabled).map(([name]) => name);
+  return writeEncrypted(file, JSON.stringify({ version: 1, keys: pick("key"), providers: pick("provider"), ...(disabled.length ? { disabled } : {}) }), crypto);
 }
 
 function dropName(keys, name) {
@@ -199,10 +201,33 @@ function dropName(keys, name) {
   for (const existing of [...keys.keys()]) if (existing.toLowerCase() === wanted) keys.delete(existing);
 }
 
+/** True if the file is there, encryption works, and it still gives no keys. */
+function keyFileUnreadable(file, crypto) {
+  return fs.existsSync(file) && crypto.isEncryptionAvailable() && loadKeyEntries(file, crypto).size === 0;
+}
+
+/**
+ * A key file that gives no keys is moved to <file>.unreadable, so a later save can't overwrite it. Its bytes are
+ * not changed. While encryption is off it stays in place, since its keys may come back when encryption works again.
+ * Returns "none" (nothing wrong), "aside" (moved) or "kept" (left in place).
+ */
+function setAsideUnreadableKeys(file, crypto) {
+  if (!fs.existsSync(file)) return "none";
+  if (!crypto.isEncryptionAvailable()) return "kept";
+  if (loadKeyEntries(file, crypto).size > 0) return "none";
+  for (let n = 1; n <= 100; n++) {
+    const aside = `${file}.unreadable${n === 1 ? "" : `-${n}`}`;
+    if (fs.existsSync(aside)) continue;
+    try { fs.renameSync(file, aside); return "aside"; } catch (e) { return "kept"; }
+  }
+  return "kept";
+}
+
 /**
  * Add a named key or replace the one with that name (ignoring case). An old single-key file
- * becomes the new format here. Nothing is written unless encryption works. With no provider, the
- * label follows keyProvider. Returns {stored: true} or {stored: false, reason}.
+ * becomes the new format here. Nothing is written unless encryption works, and a file that gives no
+ * keys is never overwritten. With no provider, the label follows keyProvider.
+ * Returns {stored: true} or {stored: false, reason}.
  */
 function saveNamedKey(file, name, key, crypto, provider) {
   if (!validKeyName(name)) return { stored: false, reason: `not stored: the name is not 1-${KEY_NAME_MAX} characters` };
@@ -211,9 +236,26 @@ function saveNamedKey(file, name, key, crypto, provider) {
   const label = keyProvider(name, provider);
   const problem = keyLabelProblem(key, label);
   if (problem) return { stored: false, reason: `not stored: ${problem}` };
+  if (keyFileUnreadable(file, crypto)) return { stored: false, reason: "not stored: the keys already stored could not be read" };
   const entries = loadKeyEntries(file, crypto);
+  const wanted = name.trim().toLowerCase();
+  const disabled = [...entries].some(([n, entry]) => n.toLowerCase() === wanted && entry.disabled);  // a replacement stays disabled
   dropName(entries, name);
-  entries.set(name.trim(), { key, provider: label });
+  entries.set(name.trim(), { key, provider: label, ...(disabled ? { disabled: true } : {}) });
+  return writeKeys(file, entries, crypto);
+}
+
+/**
+ * Mark a stored key disabled or enabled; it stays stored either way. Nothing is written if the file
+ * cannot be decrypted or has no key by that name. Returns {stored: true} or {stored: false, reason}.
+ */
+function setNamedKeyDisabled(file, name, disabled, crypto) {
+  if (typeof name !== "string") return { stored: false, reason: "not stored: no key has that name" };
+  const wanted = name.trim().toLowerCase();
+  const entries = loadKeyEntries(file, crypto);
+  const found = [...entries.keys()].find((n) => n.toLowerCase() === wanted);
+  if (!found) return { stored: false, reason: "not stored: no key has that name" };
+  if (disabled === true) entries.get(found).disabled = true; else delete entries.get(found).disabled;
   return writeKeys(file, entries, crypto);
 }
 
@@ -273,6 +315,6 @@ function statusPage(title, detail) {
 module.exports = {
   BACKEND_BOOT, KEY_FILE, KEY_PROVIDERS, PROFILE_NAME, migrateProfile, NOTIFY_TITLE_MAX, NOTIFY_BODY_MAX,
   bundledBackend, backendArgs, pickFreePort, pythonCandidates, dataDir, keyFilePath, backendEnv, validKey, validKeyName,
-  saveKeyFile, loadKeyFile, removeKeyFile, keyProvider, keyLabelProblem, loadKeyEntries, loadKeys, saveNamedKey, removeNamedKey,
+  saveKeyFile, loadKeyFile, removeKeyFile, keyProvider, keyLabelProblem, loadKeyEntries, loadKeys, saveNamedKey, setNamedKeyDisabled, removeNamedKey, setAsideUnreadableKeys,
   cleanText, notification, linkAction, escapeHtml, statusPage,
 };

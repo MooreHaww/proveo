@@ -4,8 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Proveo</title>
+<script data-boot>document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";</script>
 <style>
   :root {
+    color-scheme: light;
     --pi: #A3173F;
     --pc: #22A876;
     --cmin: #3A9AD9;
@@ -17,7 +19,44 @@
     --line: #E2E1DA;
     --paper: #FAF9F5;
     --card: #FFFFFF;
+    --on-ink: #FFFFFF;
+    --on-amber: #1B1B1F;
+    --knob: #FFFFFF;
+    --field: #FFFFFF;
+    --field-line: #8A8A82;
+    --track: #8A8A82;
+    --sunk: #F4F3EE;
+    --bar: #E4E3DC;
+    --warn-text: #7A5100;
+    --placeholder: #6E6E76;
+    --disabled-bg: #D9D7CC;
+    --disabled-text: #55555A;
+    --shadow: rgba(0,0,0,.25);
     --radius: 14px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --pi: #F0738F;
+    --cmin: #5AA9E6;
+    --chigh: #8CBDF2;
+    --slate: #A3B1C4;
+    --ink: #ECECE6;
+    --muted: #A9AAB2;
+    --line: #34363D;
+    --paper: #15161A;
+    --card: #1F2126;
+    --on-ink: #15161A;
+    --knob: #15161A;
+    --field: #17181C;
+    --field-line: #7C7E86;
+    --track: #7C7E86;
+    --sunk: #191A1E;
+    --bar: #34363D;
+    --warn-text: #F0B84A;
+    --placeholder: #9A9BA3;
+    --disabled-bg: #34363D;
+    --disabled-text: #B8B9C0;
+    --shadow: rgba(0,0,0,.5);
   }
   * { box-sizing: border-box; }
   html { font-size: 20px; }
@@ -46,7 +85,7 @@
   }
   .nav-item svg { width: 24px; height: 24px; flex: none; }
   .nav-item:hover { background: var(--paper); }
-  .nav-item[aria-current="page"] { background: color-mix(in srgb, var(--amber) 12%, #fff); border-left-color: var(--amber); font-weight: 800; }
+  .nav-item[aria-current="page"] { background: color-mix(in srgb, var(--amber) 12%, var(--card)); border-left-color: var(--amber); font-weight: 800; }
 
   .col { min-width: 0; display: flex; flex-direction: column; }
   .top { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); }
@@ -61,8 +100,8 @@
     display: inline-flex; align-items: center; gap: 14px; border: 2px solid var(--ink); background: var(--card);
     border-radius: 999px; padding: 8px 18px 8px 10px; font-weight: 700; color: var(--ink); cursor: pointer;
   }
-  .switch .track { width: 64px; height: 34px; border-radius: 999px; background: #C9C8C0; position: relative; transition: background .2s; flex: none; }
-  .switch .knob { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: left .2s; }
+  .switch .track { width: 64px; height: 34px; border-radius: 999px; background: var(--track); position: relative; transition: background .2s; flex: none; }
+  .switch .knob { position: absolute; top: 4px; left: 4px; width: 26px; height: 26px; border-radius: 50%; background: var(--knob); box-shadow: 0 1px 3px var(--shadow); transition: left .2s; }
   .switch[aria-checked="true"] .track { background: var(--amber); }
   .switch[aria-checked="true"] .knob { left: 34px; }
   .switch .state { min-width: 2.6em; text-align: left; }
@@ -77,22 +116,22 @@
   /* Compact budget meter in the header */
   .bmini { display: grid; gap: 4px; align-items: center; text-decoration: none; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--paper); font-weight: 600; }
   .bmini .btext { font-size: 0.8rem; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-  .bbar { height: 10px; border-radius: 6px; background: #E4E3DC; overflow: hidden; }
+  .bbar { height: 10px; border-radius: 6px; background: var(--bar); overflow: hidden; }
   .bbar span { display: block; height: 100%; width: 0; background: var(--slate); transition: width .4s; }
   .bbar.warn span { background: var(--amber); }
-  .bbar.blocked span { background: repeating-linear-gradient(45deg, var(--ink) 0 6px, #555 6px 12px); }
+  .bbar.blocked span { background: repeating-linear-gradient(45deg, var(--ink) 0 6px, var(--muted) 6px 12px); }
   .lvl { display: inline-flex; align-items: center; gap: 4px; font-weight: 800; font-size: 0.75rem; letter-spacing: .05em; border: 2px solid currentColor; border-radius: 6px; padding: 0 6px; }
   .lvl svg { width: 14px; height: 14px; }
-  .lvl.warn { color: #7A5100; background: color-mix(in srgb, var(--amber) 14%, #fff); }
-  .lvl.blocked { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .lvl.warn { color: var(--warn-text); background: color-mix(in srgb, var(--amber) 14%, var(--card)); }
+  .lvl.blocked { color: var(--on-ink); background: var(--ink); border-color: var(--ink); }
   .lvl.ok { color: var(--slate); }
 
   /* Banner for budget level changes */
-  .banner { display: flex; align-items: center; gap: 14px; padding: 12px 28px; border-bottom: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 14%, #fff); font-size: 0.95rem; }
-  .banner.blocked { border-bottom-color: var(--ink); background: #F1F0EA; }
+  .banner { display: flex; align-items: center; gap: 14px; padding: 12px 28px; border-bottom: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 14%, var(--card)); font-size: 0.95rem; }
+  .banner.blocked { border-bottom-color: var(--ink); background: var(--sunk); }
   .banner svg { width: 26px; height: 26px; flex: none; }
   .banner .btxt { flex: 1; }
-  .xbtn { border: 2px solid var(--ink); background: #fff; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-weight: 700; font-size: 0.85rem; }
+  .xbtn { border: 2px solid var(--ink); background: var(--card); border-radius: 8px; padding: 4px 10px; cursor: pointer; font-weight: 700; font-size: 0.85rem; }
 
   section.block { margin-bottom: 26px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; }
@@ -111,7 +150,7 @@
   .info:hover, .info[aria-expanded="true"] { color: var(--ink); background: color-mix(in srgb, var(--slate) 14%, transparent); }
   .pop {
     position: absolute; z-index: 30; width: min(20rem, calc(100vw - 24px)); padding: 12px 14px; font-size: 0.9rem; white-space: pre-line;
-    background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 0 6px 18px var(--shadow);
   }
   .stack { display: grid; gap: 22px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
@@ -121,37 +160,39 @@
   span.f { font-weight: 700; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   select, input[type=text], input[type=url], input[type=password], input[type=number], textarea {
-    width: 100%; font: inherit; font-size: 1rem; padding: 10px 12px; border-radius: 10px; border: 2px solid #BDBCB4;
-    background: #fff; color: var(--ink);
+    width: 100%; font: inherit; font-size: 1rem; padding: 10px 12px; border-radius: 10px; border: 2px solid var(--field-line);
+    background: var(--field); color: var(--ink);
   }
   textarea { resize: vertical; line-height: 1.35; }
   textarea.code, input.code { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; font-size: 0.85rem; }
-  ::placeholder { color: #8A8A92; }
+  ::placeholder { color: var(--placeholder); }
   .run-btn, .btn {
-    font-weight: 800; color: var(--ink); background: var(--amber);
+    font-weight: 800; color: var(--on-amber); background: var(--amber);
     border: none; border-radius: 12px; padding: 14px 34px; cursor: pointer;
-    box-shadow: 0 2px 0 rgba(0,0,0,.25); font-size: 1.15rem;
+    box-shadow: 0 2px 0 var(--shadow); font-size: 1.15rem;
   }
   .run-btn { min-width: 9em; }
   .btn { font-size: 1rem; padding: 10px 20px; }
   .run-btn:hover, .btn:hover { filter: brightness(1.06); }
-  .run-btn:disabled, .btn:disabled { background: #D9D7CC; color: #6A6A70; cursor: progress; box-shadow: none; }
+  .run-btn:disabled, .btn:disabled { background: var(--disabled-bg); color: var(--disabled-text); cursor: progress; box-shadow: none; }
   .ghost-btn {
-    font-size: 0.85rem; font-weight: 700; color: var(--ink); background: #fff;
+    font-size: 0.85rem; font-weight: 700; color: var(--ink); background: var(--card);
     border: 2px solid var(--slate); border-radius: 8px; padding: 6px 12px; cursor: pointer;
   }
-  .ghost-btn:hover { background: color-mix(in srgb, var(--slate) 8%, #fff); }
-  .ghost-btn:disabled { opacity: .5; cursor: default; }
+  .ghost-btn:hover { background: color-mix(in srgb, var(--slate) 8%, var(--card)); }
+  .ghost-btn:disabled { color: var(--disabled-text); background: var(--disabled-bg); border-color: var(--disabled-bg); cursor: default; }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .hint { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
   .count { font-size: 0.75rem; color: var(--muted); text-align: right; margin-top: 2px; }
-  .msg { display: none; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; border: 2px solid var(--ink); background: #fff; }
+  .msg { display: none; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 0.95rem; border: 2px solid var(--ink); background: var(--card); }
   .msg.show { display: flex; }
   .msg svg { width: 22px; height: 22px; flex: none; margin-top: 1px; }
-  .msg.error { border-color: var(--pi); background: color-mix(in srgb, var(--pi) 6%, #fff); }
-  .msg.ok { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 8%, #fff); }
+  .msg.error { border-color: var(--pi); background: color-mix(in srgb, var(--pi) 6%, var(--card)); }
+  .msg.ok { border-color: var(--pc); background: color-mix(in srgb, var(--pc) 8%, var(--card)); }
   .msg ul { margin: 4px 0 0; padding-left: 1.2em; }
   .msg b { margin-right: 4px; }
+  #keyNotice { align-items: center; margin: 0 0 12px; }
+  #keyNotice svg { margin-top: 0; }
 
   /* Run: task card */
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; border-bottom: 2px solid var(--line); }
@@ -180,25 +221,25 @@
   .answer-head h2 { margin: 0; overflow-wrap: anywhere; }
   .answer-head .ghost-btn { margin-left: auto; }
   .answer-fail { margin: 0 0 12px; overflow-wrap: anywhere; }
-  .codeblock { margin: 0; padding: 14px 16px; max-height: 26em; overflow: auto; background: #F4F3EE; border: 1px solid var(--line); border-radius: 10px; font-size: 0.85rem; line-height: 1.45; }
+  .codeblock { margin: 0; padding: 14px 16px; max-height: 26em; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; font-size: 0.85rem; line-height: 1.45; }
   .codeblock code { font-family: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace; }
 
   /* Welcome card */
   .welcome { border: 2px solid var(--amber); }
   .welcome ol { list-style: none; padding: 0; margin: 10px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
   .welcome li { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--paper); }
-  .welcome .n { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff; align-items: center; justify-content: center; font-weight: 800; margin-right: 8px; }
+  .welcome .n { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--on-ink); align-items: center; justify-content: center; font-weight: 800; margin-right: 8px; }
   .welcome li b { font-size: 1.05rem; }
   .welcome li a { display: block; margin-top: 8px; font-size: 0.9rem; }
   .welcome-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 
   /* Ladder */
   .ladder { display: flex; flex-wrap: wrap; align-items: stretch; row-gap: 14px; }
-  .arrow { flex: 0 0 40px; display: flex; align-items: center; justify-content: center; color: #B9B8B0; }
+  .arrow { flex: 0 0 40px; display: flex; align-items: center; justify-content: center; color: var(--field-line); }
   .arrow svg { width: 28px; height: 28px; }
   .arrow.on { color: var(--amber); }
   .step {
-    --c: #888; flex: 1 1 210px; min-width: 0;
+    --c: var(--field-line); flex: 1 1 210px; min-width: 0;
     position: relative; background: var(--card); border: 2px solid var(--line); border-top: 10px solid var(--c);
     border-radius: var(--radius); padding: 16px 18px 18px; min-height: 240px; display: flex; flex-direction: column; gap: 10px;
     transition: background .25s, border-color .25s, opacity .25s;
@@ -209,7 +250,7 @@
   .badge {
     display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
     font-size: 1.2rem; font-weight: 800; letter-spacing: .04em; padding: 7px 13px; border-radius: 10px;
-    border: 2px solid currentColor; color: var(--muted); background: #fff;
+    border: 2px solid currentColor; color: var(--muted); background: var(--card);
   }
   .badge svg { width: 24px; height: 24px; flex: none; }
   .metrics { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 4px 20px; margin-top: auto; }
@@ -230,14 +271,14 @@
   .step.running { border-color: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 22%, transparent); }
   .step.running .badge { color: var(--ink); }
   .step.running .badge svg, .memory.running .badge svg { animation: spin 1.1s linear infinite; }
-  .step.pass { background: color-mix(in srgb, var(--c) 12%, #fff); border-color: var(--c); }
-  .step.pass .badge { color: #fff; background: var(--ink); border-color: var(--ink); }
-  .step.fail { background: repeating-linear-gradient(45deg, #fff 0 12px, color-mix(in srgb, var(--c) 10%, #fff) 12px 24px); }
+  .step.pass { background: color-mix(in srgb, var(--c) 12%, var(--card)); border-color: var(--c); }
+  .step.pass .badge { color: var(--on-ink); background: var(--ink); border-color: var(--ink); }
+  .step.fail { background: repeating-linear-gradient(45deg, var(--card) 0 12px, color-mix(in srgb, var(--c) 10%, var(--card)) 12px 24px); }
   .step.fail .badge { color: var(--ink); border-color: var(--ink); }
-  .step.skipped, .step.bypassed, .step.notneeded { opacity: .55; }
+  .step.skipped, .step.bypassed, .step.notneeded { background: var(--sunk); color: var(--muted); }
   .step.skipped .badge, .step.bypassed .badge, .step.notneeded .badge { border-style: dashed; }
   .step.locked .badge { color: var(--ink); border-color: var(--ink); }
-  .step.locked { background: repeating-linear-gradient(-45deg, #fff 0 10px, #F3F2EC 10px 20px); }
+  .step.locked { background: repeating-linear-gradient(-45deg, var(--card) 0 10px, var(--sunk) 10px 20px); }
   .empty-ladder { padding: 18px 20px; border: 2px dashed var(--line); border-radius: var(--radius); color: var(--muted); }
 
   .memory {
@@ -255,16 +296,16 @@
   .memory.waiting .badge, .memory.miss .badge, .memory.off .badge, .memory.bypassed .badge { border-style: dashed; }
   .memory.running { border-color: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 18%, transparent); }
   .memory.running .badge { color: var(--ink); }
-  .memory.pass { background: color-mix(in srgb, var(--c) 10%, #fff); border-color: var(--c); }
-  .memory.pass .badge { color: #fff; background: var(--slate); border-color: var(--slate); }
+  .memory.pass { background: color-mix(in srgb, var(--c) 10%, var(--card)); border-color: var(--c); }
+  .memory.pass .badge { color: var(--on-ink); background: var(--slate); border-color: var(--slate); }
   .memory.miss .badge { color: var(--ink); }
-  .memory.off, .memory.bypassed { opacity: .6; }
+  .memory.off, .memory.bypassed { background: var(--sunk); color: var(--muted); }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .summary { margin: 16px 0 0; font-size: 1.15rem; font-weight: 700; min-height: 1.6em; }
   .notice {
     display: none; align-items: flex-start; gap: 12px; margin-top: 14px; padding: 12px 16px; border-radius: 10px;
-    border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 10%, #fff); font-size: 0.95rem;
+    border: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--card)); font-size: 0.95rem;
   }
   .notice.show { display: flex; }
   .notice svg { width: 24px; height: 24px; flex: none; color: var(--ink); }
@@ -279,7 +320,7 @@
   .big small { font-size: 1.2rem; color: var(--muted); font-weight: 600; letter-spacing: 0; }
   .sub { color: var(--muted); font-size: 0.95rem; margin: 0; }
   .alltime { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: 0.95rem; overflow-wrap: anywhere; }
-  .solvedbar { display: flex; height: 16px; border-radius: 6px; overflow: hidden; background: #ECEBE5; margin: 12px 0 8px; }
+  .solvedbar { display: flex; height: 16px; border-radius: 6px; overflow: hidden; background: var(--bar); margin: 12px 0 8px; }
   .solvedbar span { display: block; height: 100%; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.9rem; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -291,7 +332,7 @@
 
   .calc { display: grid; grid-template-columns: 1fr 1fr 1.1fr; gap: 26px; align-items: start; }
   .calc label { display: block; font-weight: 700; margin-bottom: 8px; }
-  .money { display: flex; align-items: center; border: 2px solid #BDBCB4; border-radius: 10px; background: #fff; }
+  .money { display: flex; align-items: center; border: 2px solid var(--field-line); border-radius: 10px; background: var(--field); }
   .money span { padding: 0 4px 0 14px; font-size: 1.2rem; color: var(--muted); }
   .money input { border: none; font: inherit; font-size: 1.3rem; padding: 10px 12px 10px 4px; width: 100%; background: transparent; color: var(--ink); }
   .money input:focus-visible { outline: none; }
@@ -316,21 +357,21 @@
   .model-row code { font-size: 0.85rem; overflow-wrap: anywhere; }
   .rungs { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
   .rung-row {
-    --c: #888; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 14px; align-items: center;
+    --c: var(--field-line); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 14px; align-items: center;
     grid-template-areas: "pos name acts" "pos meta meta";
-    border: 2px solid var(--line); border-left: 10px solid var(--c); border-radius: 12px; padding: 12px 14px; background: #fff;
+    border: 2px solid var(--line); border-left: 10px solid var(--c); border-radius: 12px; padding: 12px 14px; background: var(--card);
   }
-  .rung-row.off { background: #F4F3EE; }
+  .rung-row.off { background: var(--sunk); }
   .solvedbar span, .legend i, #compare td i { background: var(--c); }
   .ladder-actions { margin-top: 16px; justify-content: space-between; }
   .seg { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.9rem; }
   .seg-opts { display: inline-flex; border: 2px solid var(--slate); border-radius: 8px; overflow: hidden; }
-  .seg-opts label { padding: 8px 12px; cursor: pointer; background: #fff; }
+  .seg-opts label { padding: 8px 12px; cursor: pointer; background: var(--card); }
   .seg-opts label + label { border-left: 2px solid var(--slate); }
   .seg-opts input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-  .seg-opts label:has(input:checked) { background: var(--ink); color: #fff; }
+  .seg-opts label:has(input:checked) { background: var(--ink); color: var(--on-ink); }
   .seg-opts label:has(input:focus-visible) { outline: 3px solid var(--amber); outline-offset: -3px; }
-  .colorbtn { width: 40px; height: 40px; padding: 0; border: 2px solid var(--slate); border-radius: 8px; background: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .colorbtn { width: 40px; height: 40px; padding: 0; border: 2px solid var(--slate); border-radius: 8px; background: var(--card); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; }
   .colorbtn i { display: block; width: 24px; height: 24px; border-radius: 4px; background: var(--c); }
   .pop.color-pop { white-space: normal; }
   .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
@@ -341,19 +382,20 @@
   .color-more input { width: 44px; height: 32px; padding: 0; }
   .color-note { margin: 10px 0 0; font-size: 0.85rem; }
   .color-note:empty { display: none; }
-  .addform { margin-top: 14px; padding: 14px; border: 2px solid var(--line); border-radius: 12px; background: #fff; }
+  .addform { margin-top: 14px; padding: 14px; border: 2px solid var(--line); border-radius: 12px; background: var(--card); }
   .model-acts { display: inline-flex; align-items: center; gap: 8px; flex: none; }
   .added { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--slate); }
   .added svg { width: 14px; height: 14px; }
   .rung-row .pos { grid-area: pos; font-weight: 800; font-size: 0.85rem; color: var(--muted); min-width: 4.5em; align-self: start; padding-top: 12px; }
   .rung-row .rname { grid-area: name; font-weight: 700; }
   .rung-row .meta { grid-area: meta; font-size: 0.8rem; color: var(--muted); overflow-wrap: anywhere; }
-  .rung-row .acts { grid-area: acts; display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+  .rung-row .acts { grid-area: acts; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  .rung-row .acts-row { display: flex; gap: 8px; align-items: center; }
   .grid2.models { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
-  .icon-btn { width: 40px; height: 40px; border: 2px solid var(--slate); background: #fff; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+  .icon-btn { width: 40px; height: 40px; border: 2px solid var(--slate); background: var(--card); border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
   .icon-btn svg { width: 20px; height: 20px; }
-  .icon-btn:disabled { opacity: .35; cursor: default; }
-  .dirty { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.9rem; color: #7A5100; }
+  .icon-btn:disabled { color: var(--disabled-text); background: var(--disabled-bg); border-color: var(--disabled-bg); cursor: default; }
+  .dirty { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.9rem; color: var(--warn-text); }
   .dirty svg { width: 18px; height: 18px; }
 
   /* Cloud and Budget screen */
@@ -361,32 +403,42 @@
   .grid2.cloud > .stack { display: flex; flex-direction: column; min-width: 0; }
   .grid2.cloud > .stack > .card:last-child { flex: 1 1 auto; }
   .choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.7rem, 1fr)); gap: 6px; margin-bottom: 16px; }
-  .choice label { display: flex; flex-direction: column; gap: 4px; align-items: center; border: 2px solid var(--line); border-radius: 12px; padding: 8px 2px; cursor: pointer; background: #fff; font-size: 0.85rem; }
-  .choice label:has(input:checked) { border-color: var(--ink); background: color-mix(in srgb, var(--cmin) 7%, #fff); }
+  .choice label { display: flex; flex-direction: column; gap: 4px; align-items: center; border: 2px solid var(--line); border-radius: 12px; padding: 8px 2px; cursor: pointer; background: var(--card); font-size: 0.85rem; }
+  .choice label:has(input:checked) { border-color: var(--ink); background: color-mix(in srgb, var(--cmin) 7%, var(--card)); }
   .choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); flex: none; }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
   .fields .full { grid-column: 1 / -1; }
   .keystate { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.05rem; padding: 6px 12px; border-radius: 10px; border: 2px solid currentColor; }
   .keystate svg { width: 22px; height: 22px; }
-  .keystate.set { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .keystate.set { color: var(--on-ink); background: var(--ink); border-color: var(--ink); }
   .keystate.none { color: var(--muted); border-style: dashed; }
   .presets { gap: 8px; flex-wrap: wrap; }
   .keywait { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--ink); font-size: 0.95rem; }
   .keywait .tag { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 8px; border: 1.5px dashed var(--ink); border-radius: 8px; }
   .keywait svg { width: 16px; height: 16px; flex: none; }
-  .rungwaits { list-style: none; margin: 0 0 16px; padding: 0; }
-  .rungwaits li { padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: 10px; margin-bottom: 8px; }
-  .rungwaits .keywait { margin: 0 0 6px; }
-  .presets .ghost-btn[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .cloudrungs { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .cloudrung { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--card); }
+  .cloudrung.off { background: var(--sunk); color: var(--muted); }
+  .cloudrung .keywait { margin: 6px 0 0; color: inherit; }
+  .cloudrung .row { margin-top: 10px; gap: 8px; }
+  .confirmq { font-weight: 700; }
+  .togglebtn { display: inline-flex; align-items: center; gap: 6px; }
+  .togglebtn svg { width: 16px; height: 16px; flex: none; }
+  .runstate { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; }
+  .runstate .info { width: 24px; height: 24px; }
+  .pop .codeblock { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .pop p { margin: 0; }
+  .presets .ghost-btn[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
   .keylist { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 10px; }
-  .keyrow { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fff; }
+  .keyrow { border: 2px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--card); }
   .keyhead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .keyhead .keyname { font-weight: 800; overflow-wrap: anywhere; min-width: 0; }
   .keyhead .keystate { font-size: 0.85rem; padding: 3px 8px; }
   .keyhead .keystate svg { width: 16px; height: 16px; }
-  .keyhead .ghost-btn { margin-left: auto; }
+  .keybtns { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .keyrow.off { background: var(--sunk); color: var(--muted); }
   .keyrow .hint { margin: 6px 0 0; }
-  .keyconfirm { margin-top: 10px; padding: 12px; border: 2px solid var(--ink); border-radius: 10px; background: #FBF7EC; }
+  .keyconfirm { margin-top: 10px; padding: 12px; border: 2px solid var(--ink); border-radius: 10px; background: color-mix(in srgb, var(--amber) 8%, var(--card)); }
   .keyconfirm p { margin: 0 0 10px; }
   .keypick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-weight: 700; color: var(--ink); }
   .keypick select { width: auto; min-width: 14em; max-width: 100%; }
@@ -394,8 +446,8 @@
   .bstate { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.15rem; padding: 6px 12px; border-radius: 10px; border: 2px solid currentColor; }
   .bstate svg { width: 24px; height: 24px; }
   .bstate.ok { color: var(--slate); }
-  .bstate.warn { color: #7A5100; background: color-mix(in srgb, var(--amber) 14%, #fff); }
-  .bstate.blocked { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .bstate.warn { color: var(--warn-text); background: color-mix(in srgb, var(--amber) 14%, var(--card)); }
+  .bstate.blocked { color: var(--on-ink); background: var(--ink); border-color: var(--ink); }
   .bnums { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 700; }
 
   /* About */
@@ -434,7 +486,7 @@
     .memory { grid-template-columns: 1fr; }
     .rung-row { grid-template-columns: 1fr; grid-template-areas: "pos" "name" "meta" "acts"; }
     .rung-row .pos { padding-top: 0; }
-    .rung-row .acts { justify-content: flex-start; flex-wrap: wrap; }
+    .rung-row .acts { align-items: flex-start; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -471,6 +523,7 @@
             <span class="track" aria-hidden="true"><span class="knob"></span></span>
             <span>Eco mode</span><span class="state" id="ecoState">ON</span>
           </button>
+          <button class="ghost-btn togglebtn" id="themeBtn" type="button"></button>
         </div>
       </div>
       <div class="banner" id="banner" role="alert" hidden></div>
@@ -646,7 +699,8 @@
             </div>
           </section>
           <section class="card" aria-labelledby="rungsTitle">
-            <div class="head"><h2 id="rungsTitle">Ladder</h2><button class="info" data-info="ladder"></button></div>
+            <div class="head"><h2 id="rungsTitle">Ladder</h2><button class="info" data-info="ladder"></button>
+              <button class="ghost-btn" id="refreshRungs" type="button" aria-label="Check which local rungs are running" style="margin-left:auto" hidden>Refresh</button></div>
             <ol class="rungs" id="rungList"></ol>
             <div class="row ladder-actions">
               <span class="dirty" id="dirtyFlag" hidden></span>
@@ -720,9 +774,15 @@
               <div class="row" style="margin-top:16px">
                 <button class="btn" id="saveCloud" type="button">Save cloud settings</button>
                 <button class="ghost-btn" id="addCloud" type="button">Add as another cloud rung</button>
+                <span class="added" id="cloudDup" hidden></span>
               </div>
               <p class="hint" id="cloudTierNote"></p>
               <div class="msg" id="cloudMsg" role="status"></div>
+            </section>
+            <section class="card" aria-labelledby="rungsTitle">
+              <div class="head"><h2 id="rungsTitle">Your cloud rungs</h2><button class="info" data-info="cloudrungs"></button></div>
+              <ul class="cloudrungs" id="cloudRungs"></ul>
+              <div class="msg" id="cloudRungMsg" role="status"></div>
             </section>
           </div>
           <div class="stack">
@@ -741,7 +801,7 @@
             </section>
             <section class="card" aria-labelledby="keyTitle">
               <div class="head"><h2 id="keyTitle">API keys</h2><button class="info" data-info="keys"></button></div>
-              <ul class="rungwaits" id="rungWaits" aria-label="Cloud rungs waiting for a key" hidden></ul>
+              <div class="msg error show" id="keyNotice" role="status" hidden><span><b>Stored keys could not be read.</b> Add them again.</span><button class="info" data-info="keyfile"></button></div>
               <ul class="keylist" id="keyList"></ul>
               <h3 style="margin:0 0 10px">Add a key</h3>
               <div class="fields">
@@ -758,7 +818,6 @@
 
       <!-- ============ ABOUT ============ -->
       <div class="screen about" id="screen-about" hidden>
-        <h2 class="title">Proveo</h2>
         <section class="block card">
           <h2>What it is</h2>
           <p class="pitch">Let your tests choose the model. Cheapest first.</p>
@@ -803,7 +862,7 @@
         </section>
         <section class="block card">
           <h2>Version</h2>
-          <p class="num">Version 0.1.0</p>
+          <p class="num">0.1.0</p>
           <p><a href="https://github.com/MooreHaww/pi-edge-router" target="_blank" rel="noopener">Repository on GitHub</a></p>
         </section>
       </div>
@@ -834,28 +893,38 @@
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M7 4l13 8-13 8z"/></svg>',
     chip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>',
+    power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.5 7a8 8 0 1 0 11 0"/></svg>',
+    sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>',
+    moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
     key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/></svg>',
   };
-  const HEX = { pi: "#A3173F", pc: "#22A876", slate: "#3F4A5A", none: "#B9B8B0" };
-  // A Meta rung's blue follows its effort, lightest to darkest. Every pair, and each against Pi and PC,
+  const HEX = { pi: "#A3173F", pc: "#22A876", slate: "#3F4A5A", none: "#8A8A82" };
+  const HEX_DARK = { pi: "#F0738F", pc: "#22A876", slate: "#A3B1C4", none: "#777981" };
+  // A Meta rung's blue follows its effort: more effort, more contrast against the card, in both themes. Every pair, and each against Pi and PC,
   // stays clearly apart under simulated red-green and blue-yellow colour blindness. The effort word is on the rung too.
-  const EFFORT_BLUE = { minimal: "#8ECBF1", low: "#2B7FC4", medium: "#15508F", high: "#0A2850" };
+  const EFFORT_BLUE = { minimal: "#3A9AD9", low: "#1F6CB0", medium: "#15508F", high: "#0A2850" };
+  const EFFORT_BLUE_DARK = { minimal: "#3F7FC4", low: "#6AA6E8", medium: "#A3CBF5", high: "#DCEDFF" };
   // Extra rung colours: distinct from the tier colours, the amber accent and each other.
   const PALETTE = ["#6A3D9A", "#D55E00", "#CC79A7", "#00727A", "#8C510A", "#6B6B00", "#7F2704", "#4A4E8C"];
+  const PALETTE_DARK = ["#FCD383", "#B11FF9", "#68F91F", "#F91F44", "#D6D6A9", "#C91DAC", "#71B464", "#9783FC"];
   const $ = (id) => document.getElementById(id);
   const money = (v) => "$" + Number(v || 0).toFixed(6);
   const usd2 = (v) => "$" + Number(v || 0).toFixed(2);
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const S = {
+    rungState: {},
+    rungCheck: 0,
     eco: true, cloudAllowed: false, memory: false, tasks: [], measuredShare: null, polling: null,
     settings: null, draft: null, dirty: false, colors: {}, names: {}, budget: null,
-    keys: [], storedKeys: new Set(), confirmKey: null, picked: null, colorMode: "default", found: { detect: [], probe: [], detected: false, probed: false },
+    keys: [], storedKeys: new Set(), confirmKey: null, confirmRung: null, cloudBusy: false, picked: null, colorMode: "default", found: { detect: [], probe: [], detected: false, probed: false },
     checks: [["", ""]], codeMode: false,
     mode: "bench", lastJob: null, running: false, welcomeDismissed: false, lastLevel: null,
   };
   const desktop = () => (typeof window.ecoDesktop === "object" && window.ecoDesktop) || null;
   // The desktop app adds ?stored=1 when it restored keys from its encrypted store; ignored in a browser.
   const restored = !!desktop() && new URLSearchParams(location.search).get("stored") === "1";
+  // It adds ?keys=aside or ?keys=kept when its key file gave no keys. Only the file's state, no names.
+  const keysProblem = desktop() ? new URLSearchParams(location.search).get("keys") : null;
   // Names of keys the desktop app could not store, so a reload doesn't call them stored. Names only.
   const SESSION_ONLY = "eco-session-only-keys";
   function sessionOnly() {
@@ -903,7 +972,7 @@
       const t = tiers && tiers[Number(n) - 1];
       return t && String(t.name || "").trim() ? `The rung "${String(t.name).trim()}"` : `Rung ${n}`;
     })
-    .replace(/\btier ids\b/g, "Rung ids").replace(/\bbase_url\b/g, "base URL");
+    .replace(/\bat least one tier\b/g, "at least one rung").replace(/\btier ids\b/g, "Rung ids").replace(/\bbase_url\b/g, "base URL");
   const post = (url, body) => getJSON(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
   function showMsg(el, kind, title, text) {
@@ -921,7 +990,7 @@
   /* ---------- Info buttons ---------- */
   // Each is [aria-label, text]. Fixed strings, shown as text.
   const INFO = {
-    ladder: ["About the ladder", "A task goes up the rungs in order, cheapest first. Each answer runs against the tests. The first pass wins, and later rungs are not called."],
+    ladder: ["About the ladder", "A task goes up the rungs in order, cheapest first. Each answer runs against the tests. The first pass wins, and later rungs are not called. On the Models screen, Running means a local server answered. It does not confirm that rung's model is loaded."],
     memory: ["About verified memory", "An exact repeat of a task reuses a stored answer. The answer is re-checked against the tests every time."],
     codetask: ["How a code task works", "1. You describe the function and add checks.\n2. The app asks the cheapest model and runs your checks on its answer.\n3. If a check fails, it asks the next model, until one passes."],
     check: ["About the code check", "It runs in a subprocess with a time limit. It is not a sandbox."],
@@ -932,6 +1001,8 @@
     provider: ["About the provider choice", "Only Meta Muse Spark has been tested in this app."],
     custom: ["About Custom", "For any server that speaks the OpenAI-compatible chat format. Add its base URL, model and prices."],
     presets: ["About presets and prices", "A preset fills in the URL and model. Prices let the budget count this provider's spend: see the provider's pricing page."],
+    cloudrungs: ["About your cloud rungs", "A disabled rung stays here and the ladder skips it. Choose a rung's key on the Models screen."],
+    keyfile: ["About the unreadable keys", "This computer could not decrypt the saved key file. That can happen if the app is forced closed in the first seconds after its very first start. The old file is kept, still encrypted, beside the app's data as model-key.enc.unreadable. The app does not use it again. A key you had disabled needs disabling again."],
     keys: ["About API keys", "Held in memory, or encrypted on this computer in the desktop app. A key is never shown again after you save it. Choose which rung uses it on the Models screen. Only a key marked Meta can call Meta, and only that kind is used without you choosing it."],
     budget: ["About the budget", "Spend is tracked from this app's own cloud calls, not your provider's account. WARNING from 80% of the limit. BLOCKED at 100%: cloud rungs are skipped. Leave the limit blank for no limit."],
   };
@@ -984,7 +1055,10 @@
       if (a.dataset.screen === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
   }
-  window.addEventListener("hashchange", () => { closeInfo(); closeColor(); showScreen(); window.scrollTo(0, 0); });
+  window.addEventListener("hashchange", () => {
+    closeInfo(); closeColor(); showScreen(); window.scrollTo(0, 0);
+    if (location.hash === "#models") checkRungs();
+  });
 
   // Logo: /assets/logo.svg if it exists, otherwise the three-dot mark.
   const logo = $("logoImg");
@@ -996,10 +1070,20 @@
   /* ---------- Tiers, colours, names ---------- */
   function validHex(c) { return typeof c === "string" && /^#[0-9A-Fa-f]{6}$/.test(c); }
   function contrastOnCard(hex) {
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-    return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+    const lum = (c) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [lum(hex), lum(activeCard())].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function activeCard() { return getComputedStyle(document.documentElement).getPropertyValue("--card").trim(); }
+  function isDark() { return document.documentElement.dataset.theme === "dark"; }
+  function shades() {
+    return isDark() ? { HEX: HEX_DARK, EFFORT_BLUE: EFFORT_BLUE_DARK, PALETTE: PALETTE_DARK } : { HEX, EFFORT_BLUE, PALETTE };
   }
   function colorsFor(tiers, mode) {
+    const { HEX, EFFORT_BLUE, PALETTE } = shades();
     const map = {}, used = new Set();
     const own = (t) => mode === "custom" && validHex(t.color);
     for (const t of tiers) if (own(t)) used.add(t.color);
@@ -1033,7 +1117,7 @@
   const ecoOffTier = () => enabled().find((t) => t.kind === "cloud") || null;
   const nameOf = (id) => id === "memory" ? "Memory" : id === "none" ? "None" : (S.names[id] || id);
   const blocked = () => !!(S.budget && S.budget.level === "blocked");
-  const KEY_WAITS = ["No API key set yet", "Choose a key"];
+  const KEY_WAITS = ["No API key set yet", "Choose a key", "Key disabled"];
   const META_KEY_REFUSAL = "This rung calls Meta, but that key is for ";
   // Same check as eco_core.key_label_problem. The backend enforces it; this one stops the key before it is sent.
   const KEY_PREFIXES = [["sk-ant-", "Claude (Anthropic)"], ["sk-proj-", "OpenAI"], ["AIza", "Gemini (Google)"], ["gsk_", "Groq"]];
@@ -1062,6 +1146,8 @@
   }
   const providerOf = (name) => (S.settings.key_providers || {})[name] || "Other";
   const metaKeys = () => S.settings.key_names.filter((n) => providerOf(n) === "Meta");
+  const keyOff = (name) => (S.settings.key_disabled || []).some((n) => nameKey(n) === nameKey(name));
+  const usableMetaKeys = () => metaKeys().filter((n) => !keyOff(n));
   const storedName = (wanted) => S.settings.key_names.find((n) => nameKey(n) === nameKey(wanted));
   function metaRefusal(t, name) {
     return callsMetaHost(t) && providerOf(name) !== "Meta" ? META_KEY_REFUSAL + providerOf(name) : "";
@@ -1070,9 +1156,11 @@
     const names = S.settings.key_names;
     if (t.key_name) {
       const known = storedName(t.key_name);
-      return known ? metaRefusal(t, known) : KEY_WAITS[0];
+      if (!known) return KEY_WAITS[0];
+      return metaRefusal(t, known) || (keyOff(known) ? KEY_WAITS[2] : "");
     }
-    if (metaKeys().length === 1 && mayUseOnlyKey(t)) return "";
+    if (mayUseOnlyKey(t) && usableMetaKeys().length === 1) return "";
+    if (mayUseOnlyKey(t) && metaKeys().length && !usableMetaKeys().length) return KEY_WAITS[2];
     return names.length ? KEY_WAITS[1] : KEY_WAITS[0];
   }
   /* Allowed, but worth saying: the key is marked for another provider than the one this rung is set up for. */
@@ -1112,6 +1200,7 @@
   function budgetLink() {
     return [document.createTextNode("budget limit reached · "), h("a", { href: "#cloud" }, "Cloud and Budget")];
   }
+  const plainFailure = (text) => text.replace(/^tests line \d+: /, "");
   function setStep(tier, cls, label, iconName, detail, attempt) {
     const el = tier === "memory" ? document.querySelector('[data-tier="memory"]') : rungEls[tier];
     if (!el) return;
@@ -1176,7 +1265,7 @@
       const a = job.attempts.find((x) => x.tier === t.id);
       if (!order.includes(t.id)) setStep(t.id, "bypassed", "BYPASSED", "skip", "Eco mode is off");
       else if (a) setStep(t.id, a.passed ? "pass" : "fail", a.passed ? "PASS" : "FAIL", a.passed ? "check" : "cross",
-                          a.passed ? "All tests passed" : (a.first_failure || a.error || "Tests failed"), a);
+                          a.passed ? "All tests passed" : plainFailure(a.first_failure || a.error || "Tests failed"), a);
       else if (job.current === t.id) setStep(t.id, "running", "RUNNING", "spin", "Generating and testing…");
       else if (job.skipped.includes(t.id)) {
         const why = (job.skip_reasons || {})[t.id];
@@ -1438,14 +1527,14 @@
     $("answerState").replaceChildren(icon(passed ? "check" : "cross"), passed ? "PASS" : "FAIL");
     $("answerTitle").textContent = passed ? `Passing code from ${from}` : a ? `No rung passed. Last answer, from ${from}` : "No rung gave an answer";
     $("answerFail").hidden = passed || !a;
-    $("answerFail").textContent = a && !passed ? `Failed check: ${a.first_failure.replace(/^tests line \d+: /, "")}` : "";
+    $("answerFail").textContent = a && !passed ? `Failed check: ${plainFailure(a.first_failure)}` : "";
     $("answerBlock").hidden = !a;
     $("copyAnswer").hidden = !a;
     $("copyAnswer").textContent = "Copy";
     $("answerCode").textContent = a ? a.code : "";
   }
-  async function copyAnswer() {
-    const btn = $("copyAnswer"), code = $("answerCode");
+  const copyAnswer = () => copyText($("answerCode"), $("copyAnswer"));
+  async function copyText(code, btn) {
     let copied = false;
     try { await navigator.clipboard.writeText(code.textContent); copied = true; }
     catch (e) {  // the desktop app denies the clipboard permission; a copy from a selection still works
@@ -1488,6 +1577,7 @@
       keys.push("none");
       for (const k of keys) {
         const n = by[k] || 0;
+        const { HEX } = shades();
         const c = k === "memory" ? HEX.slate : k === "none" ? HEX.none : (S.colors[k] || "#777777");
         if (total && n) bar.append(h("span", { style: `width:${100 * n / total}%;--c:${c}` }));
         legend.append(h("span", null, h("i", { style: `--c:${c}` }),
@@ -1516,8 +1606,8 @@
       $("localShare").textContent = pct.toFixed(1) + "%";
       $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved locally (Pi or PC)`;
       const rows = [
-        [EFFORT_BLUE.minimal, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
-        ["#C98500", `PC then cloud, minimal (${m.pc_then_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.pc_then_cloud_minimal.cost_usd)],
+        [shades().EFFORT_BLUE.minimal, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
+        ["var(--amber)", `PC then cloud, minimal (${m.pc_then_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.pc_then_cloud_minimal.cost_usd)],
       ];
       const table = $("compare");
       table.replaceChildren(h("caption", { style: "text-align:left;color:var(--muted);font-size:.9rem;padding-bottom:4px" },
@@ -1576,8 +1666,36 @@
     try { await post("/api/memory/clear", {}); } catch (e) { notice("Could not clear memory: " + e.message); }
     loadMemory();
   }
+  /* The theme: the stored choice, or the system's until a choice is made. */
+  const systemDark = matchMedia("(prefers-color-scheme: dark)");
+  function showTheme() {
+    const dark = (S.themeChoice || (systemDark.matches ? "dark" : "light")) === "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const btn = $("themeBtn");
+    btn.setAttribute("aria-label", `Theme: ${dark ? "Dark" : "Light"}. Switch to ${dark ? "Light" : "Dark"}`);
+    btn.replaceChildren(icon(dark ? "moon" : "sun"), dark ? "Dark" : "Light");
+    if (!S.settings) return;
+    // Rung colours differ by theme. Only the colours change, so a finished or running task stays on screen.
+    closeColor();
+    S.colors = colorsFor(S.settings.tiers, S.settings.color_mode);
+    for (const [id, el] of Object.entries(rungEls)) el.style.setProperty("--c", S.colors[id]);
+    renderRungList();
+    loadStats();
+    loadMeasured();
+  }
+  async function toggleTheme() {
+    S.themeChoice = isDark() ? "light" : "dark";
+    showTheme();
+    try { await post("/api/theme", { theme: S.themeChoice }); } catch (e) { /* it still applies for this session */ }
+  }
+  $("themeBtn").addEventListener("click", toggleTheme);
+  systemDark.addEventListener("change", () => { if (!S.themeChoice) showTheme(); });
   async function loadConfig() {
-    try { S.cloudAllowed = (await getJSON("/api/config")).cloud_enabled; } catch (e) { S.cloudAllowed = false; }
+    let config = {};
+    try { config = await getJSON("/api/config"); } catch (e) { /* cloud stays off below */ }
+    S.cloudAllowed = !!config.cloud_enabled;
+    S.themeChoice = config.theme || null;
+    showTheme();
     const p = $("cloudPill");
     p.replaceChildren(icon(S.cloudAllowed ? "cloud" : "lock"), h("span", null, S.cloudAllowed ? "Cloud calls allowed" : "Cloud disabled on this server"));
   }
@@ -1683,7 +1801,7 @@
   const foundKey = (baseUrl, model) => `${endpointKey(baseUrl)} ${model}`;
   const inLadder = (key) => (S.draft || []).some((t) => t.kind === "local" && foundKey(t.base_url, t.model) === key);
   function refreshAdded() {
-    document.querySelectorAll(".added").forEach((el) => { el.hidden = !inLadder(el.dataset.key); });
+    document.querySelectorAll(".added[data-key]").forEach((el) => { el.hidden = !inLadder(el.dataset.key); });  // only the Find models rows
   }
   const KNOWN_KINDS = ["Ollama", "LM Studio", "llama.cpp"];
   function serverCard(server) {
@@ -1741,6 +1859,8 @@
   // At least 3:1 on the card, and as far apart as a search could get them in normal, protan, deutan and tritan vision.
   const SWATCHES = [["Charcoal", "#2B2B2B"], ["Maroon", "#7F0000"], ["Wine", "#882255"], ["Purple", "#6A3D9A"], ["Indigo", "#5D3FD3"], ["Brown", "#795548"],
                     ["Teal", "#0F6E84"], ["Olive", "#6B6B00"], ["Magenta", "#C71585"], ["Lilac", "#9467BD"], ["Rose", "#CC6677"], ["Gold", "#B8860B"]];
+  const SWATCHES_DARK = [["Orange", "#E07306"], ["Violet", "#B11FF9"], ["Mint", "#83FCAB"], ["Blue", "#3473B2"], ["Yellow", "#F9F91F"], ["Brown", "#9B734B"],
+                         ["Apricot", "#E9A663"], ["Magenta", "#FB51FB"], ["Ice", "#C4EEE7"], ["Green", "#64B48C"], ["Lilac", "#D9B4FD"], ["Gold", "#E2C636"]];
   let colorOpen = null;
   function closeColor(refocus) {
     if (!colorOpen) return;
@@ -1761,7 +1881,7 @@
   function tryColor(t, hex, note) {
     if (!validHex(hex)) return;
     const ratio = contrastOnCard(hex);
-    if (ratio < 3) { note.textContent = `Too pale to see on the card (${ratio.toFixed(1)}:1, it needs at least 3:1). Pick a darker colour.`; return; }
+    if (ratio < 3) { note.textContent = `Too hard to see on the card (${ratio.toFixed(1)}:1, it needs at least 3:1). Pick a ${isDark() ? "lighter" : "darker"} colour.`; return; }
     setRungColor(t, hex);
   }
   function openColor(btn, t, current) {
@@ -1774,7 +1894,7 @@
     const other = h("input", { type: "color", value: current.toLowerCase(), "aria-label": `Other colour for ${t.name}` });
     other.addEventListener("change", () => tryColor(t, other.value, note));
     pop.replaceChildren(
-      h("div", { class: "swatches" }, ...SWATCHES.map(([name, hex]) => h("button", { class: "swatch", type: "button", style: `--c:${hex}`, title: name, "aria-label": name,
+      h("div", { class: "swatches" }, ...(isDark() ? SWATCHES_DARK : SWATCHES).map(([name, hex]) => h("button", { class: "swatch", type: "button", style: `--c:${hex}`, title: name, "aria-label": name,
         "aria-pressed": String(t.color === hex), onclick: () => tryColor(t, hex, note) }))),
       h("div", { class: "color-more" },
         h("button", { class: "ghost-btn", type: "button", onclick: () => setRungColor(t, null) }, "Reset"),
@@ -1789,10 +1909,10 @@
   function keyPicker(t, onPick) {
     const names = S.settings.key_names;
     const known = t.key_name ? storedName(t.key_name) : null;
-    const auto = !names.length ? "No key yet" : metaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${metaKeys()[0]})` : "Choose a key";
+    const auto = !names.length ? "No key yet" : usableMetaKeys().length === 1 && mayUseOnlyKey(t) ? `Automatic (${usableMetaKeys()[0]})` : "Choose a key";
     const sel = h("select", { "aria-label": `API key for ${t.name}` },
       h("option", { value: "" }, auto),
-      ...names.map((n) => h("option", { value: n }, `${n} (${shownLabels(providerOf(n))})`)),
+      ...names.map((n) => h("option", { value: n }, `${n} (${shownLabels(providerOf(n))}${keyOff(n) ? ", disabled" : ""})`)),
       t.key_name && !known ? h("option", { value: t.key_name }, `${t.key_name} (not set)`) : null);
     sel.value = known || t.key_name || "";
     const note = h("div", { class: "keynote" });
@@ -1810,33 +1930,73 @@
     showNote();
     return h("div", null, h("label", { class: "keypick" }, "Key", sel), onPick ? null : note);
   }
-  /* Cloud screen: the rungs waiting for a key, each with its own dropdown. A choice here is saved at once. */
-  function renderRungWaits() {
-    const list = $("rungWaits");
-    const waiting = S.settings.tiers.filter((t) => t.kind === "cloud" && keyReason(t));
-    list.hidden = !waiting.length;
-    list.replaceChildren(...waiting.map((t) => h("li", null,
-      h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("wait"), "WAITING"), h("b", null, t.name), shownLabels(keyReason(t))),
-      keyWarning(t) ? keyWarnNote(keyWarning(t)) : null,
-      S.settings.key_names.length ? keyPicker(t, (name) => pickRungKey(t, name)) : null)));
+  const powerBtn = (on, name, onclick) => h("button", { class: "ghost-btn togglebtn", type: "button", "aria-label": `${on ? "Disable" : "Enable"} ${name}`, onclick },
+    icon("power"), on ? "Disable" : "Enable");
+  // Identical means same address, model and effort. Adding one is allowed; the second copy can act as a retry.
+  const rungSignature = (t) => [endpointKey(t.base_url), t.model, (t.flags && t.flags.effort) || ""].join("|");
+  function formSignature() {
+    if (currentCard() !== "meta") return [endpointKey($("oaiUrl").value), $("oaiModel").value.trim(), ""].join("|");
+    const meta = cloudTier(S.settings.defaults);
+    return [endpointKey(meta.base_url), meta.model, $("effort").value].join("|");
   }
-  async function pickRungKey(t, name) {
-    const msg = $("keyMsg");
-    if (name && metaRefusal(t, name)) {
-      renderRungWaits();
-      return showMsg(msg, "error", "Not saved:", metaRefusal(t, name));
-    }
-    const tiers = clone(S.settings.tiers);
-    const change = (rung) => { if (name) rung.key_name = name; else delete rung.key_name; };
-    change(tiers.find((x) => x.id === t.id));
+  function renderCloudDup() {
+    const el = $("cloudDup");
+    const same = !!S.settings && S.settings.tiers.some((t) => t.kind === "cloud" && rungSignature(t) === formSignature());
+    el.hidden = !same;
+    el.replaceChildren(...(same ? [icon("info"), "Already added"] : []));
+  }
+  /* Cloud screen: every cloud rung. A change here is saved at once, and joins any unsaved Models edits. */
+  function renderCloudRungs() {
+    const list = $("cloudRungs");
+    const rungs = S.settings.tiers.filter((t) => t.kind === "cloud");
+    if (!rungs.length) return list.replaceChildren(h("li", { class: "empty-ladder" }, "No cloud rungs yet."));
+    const seen = new Set();
+    list.replaceChildren(...rungs.map((t) => {
+      const dup = seen.has(rungSignature(t));
+      seen.add(rungSignature(t));
+      const why = keyReason(t), warning = keyWarning(t);
+      const used = t.key_name ? storedName(t.key_name) : usableMetaKeys()[0];
+      const asking = S.confirmRung === t.id;
+      return h("li", { class: "cloudrung" + (t.enabled ? "" : " off") },
+        h("div", { class: "keyhead" },
+          h("span", { class: "keyname" }, t.name),
+          t.enabled ? null : h("span", { class: "added" }, icon("skip"), "Disabled"),
+          dup ? h("span", { class: "added" }, icon("info"), "Already added") : null),
+        h("p", { class: "hint" }, hwLine(t)),
+        why ? keyWaitNote(why) : h("p", { class: "keywait" }, h("span", { class: "tag" }, icon("key"), "Key set"), used),
+        warning ? keyWarnNote(warning) : null,
+        h("div", { class: "row" }, ...(asking ? [
+          h("span", { class: "confirmq" }, "Remove?"),
+          h("button", { class: "ghost-btn", type: "button", "aria-label": `Yes, remove ${t.name}`, onclick: () => removeCloudRung(t) }, "Yes"),
+          h("button", { class: "ghost-btn", type: "button", "aria-label": `No, keep ${t.name}`, onclick: () => { S.confirmRung = null; renderCloudRungs(); } }, "No"),
+        ] : [
+          powerBtn(t.enabled, t.name, () => toggleCloudRung(t)),
+          h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${t.name}`, onclick: () => { S.confirmRung = t.id; renderCloudRungs(); } }, "Remove"),
+        ])));
+    }));
+  }
+  async function editCloudRungs(edit, done) {
+    if (S.cloudBusy) return;  // a second press must not act on the old list
+    S.cloudBusy = true;
+    const msg = $("cloudRungMsg"), tiers = edit(clone(S.settings.tiers));
     try {
       const view = await post("/api/settings", { tiers });
-      const draft = S.dirty && S.draft.find((x) => x.id === t.id);  // keep unsaved Models edits
-      if (draft) change(draft);
+      if (S.dirty) S.draft = edit(S.draft);  // keep unsaved Models edits
+      S.confirmRung = null;
       applySettings(view);
-      const warning = name ? keyWarning({ ...t, key_name: name }) : "";
-      showMsg(msg, "ok", "Saved.", (name ? `${t.name} uses the key named ${name}.` : `${t.name} has no key chosen.`) + (warning ? ` ${warning}` : ""));
-    } catch (e) { showMsg(msg, "error", "Not saved. Please fix:", plain(e.message, tiers)); }
+      showMsg(msg, "ok", done);
+    } catch (e) {
+      S.confirmRung = null;
+      renderCloudRungs();
+      showMsg(msg, "error", "Not saved:", plain(e.message, tiers));
+    } finally { S.cloudBusy = false; }
+  }
+  function toggleCloudRung(t) {
+    const on = !t.enabled;
+    return editCloudRungs((list) => list.map((x) => (x.id === t.id ? { ...x, enabled: on } : x)), `${t.name}: ${on ? "enabled" : "disabled"}.`);
+  }
+  function removeCloudRung(t) {
+    return editCloudRungs((list) => list.filter((x) => x.id !== t.id), `${t.name}: removed.`);
   }
   function renderRungList() {
     const list = $("rungList");
@@ -1850,9 +2010,7 @@
       const change = () => { S.dirty = true; renderRungList(); };
       const nameInput = h("input", { type: "text", class: "rname", value: t.name, maxlength: "60", "aria-label": `Display name of rung ${i + 1}` });
       nameInput.addEventListener("input", () => { t.name = nameInput.value; S.dirty = true; dirtyFlag(); });
-      const sw = h("button", { class: "switch small", role: "switch", "aria-checked": String(t.enabled), type: "button", "aria-label": `${t.name} enabled`,
-                               onclick: () => { t.enabled = !t.enabled; change(); } },
-        h("span", { class: "track", "aria-hidden": "true" }, h("span", { class: "knob" })), h("span", null, t.enabled ? "On" : "Off"));
+      const toggle = powerBtn(t.enabled, t.name, () => { t.enabled = !t.enabled; change(); });
       const move = (d) => { const j = i + d; [S.draft[i], S.draft[j]] = [S.draft[j], S.draft[i]]; change(); };
       const up = h("button", { class: "icon-btn", type: "button", "aria-label": `Move ${t.name} up`, title: "Move up", onclick: () => move(-1) }, icon("up"));
       const down = h("button", { class: "icon-btn", type: "button", "aria-label": `Move ${t.name} down`, title: "Move down", onclick: () => move(1) }, icon("down"));
@@ -1863,13 +2021,62 @@
       const swatch = S.colorMode !== "custom" ? null : h("button", { class: "colorbtn", type: "button", "data-rung": t.id, "aria-label": `Colour of ${t.name}`, "aria-haspopup": "dialog", "aria-expanded": "false", style: `--c:${colors[t.id]}`,
         onclick: (e) => { if (colorOpen === e.currentTarget) closeColor(); else openColor(e.currentTarget, t, colors[t.id]); } }, h("i", { "aria-hidden": "true" }));
       list.append(h("li", { class: "rung-row" + (t.enabled ? "" : " off"), style: `--c:${colors[t.id]}` },
-        h("span", { class: "pos" }, t.enabled ? `Rung ${++pos}` : "Off"),
-        nameInput, h("div", { class: "meta" }, `${where} · ${hwLine(t)}`, t.kind === "cloud" ? keyPicker(t) : null),
-        h("div", { class: "acts" }, swatch, sw, up, down, rm)));
+        h("span", { class: "pos" }, t.enabled ? `Rung ${++pos}` : "Disabled"),
+        nameInput, h("div", { class: "meta" }, `${where} · ${hwLine(t)}`,
+          t.kind === "local" ? h("span", { class: "runstate", "data-rung": t.id }) : null,
+          S.colorMode === "custom" && validHex(t.color) && contrastOnCard(t.color) < 3 ? h("span", { class: "added" }, icon("info"), "Low contrast") : null,
+          t.kind === "cloud" ? keyPicker(t) : null),
+        h("div", { class: "acts" }, h("div", { class: "acts-row" }, swatch, up, down, rm), toggle)));
     });
     if (!S.draft.length) list.append(h("li", { class: "empty-ladder" }, "No rungs. Detect a model or add a machine by address."));
     dirtyFlag();
+    paintRunState();
     refreshAdded();
+  }
+  /* Running or not, for the saved local rungs. Checked on opening Models and on Refresh, never on a timer. */
+  const RUN_STATES = { checking: ["spin", "Checking"], running: ["check", "Running"], stopped: ["cross", "Not running"] };
+  function startCommand(t) {
+    let port = "8080";
+    try { const u = new URL(t.base_url); port = u.port || { "http:": "80", "https:": "443" }[u.protocol]; } catch (e) { /* keep the usual port */ }
+    if (port === "11434") return "ollama serve";
+    if (port === "1234") return "lms server start";
+    return `llama-server -m <model file> -c 4096 --host 0.0.0.0 --port ${port}`;
+  }
+  function openStartHelp(btn, t) {
+    closeInfo();
+    closeColor();
+    infoOpen = btn;
+    btn.setAttribute("aria-expanded", "true");
+    const code = h("code", null, startCommand(t));
+    const copy = h("button", { class: "ghost-btn", type: "button", onclick: () => copyText(code, copy) }, "Copy");
+    const here = ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(host(t.base_url).replace(/:\d+$/, ""));
+    $("infoPop").hidden = false;
+    $("infoPop").replaceChildren(h("p", null, here ? "To start it, run:" : `To start it, run this on ${host(t.base_url).replace(/:\d+$/, "")}:`),
+      h("pre", { class: "codeblock" }, code), copy);
+    placeInfo();
+  }
+  function paintRunState() {
+    if (infoOpen && infoOpen.closest(".runstate")) closeInfo();
+    $("refreshRungs").hidden = !(S.settings && S.settings.tiers.some((t) => t.kind === "local"));
+    document.querySelectorAll(".runstate").forEach((el) => {
+      const state = S.rungState[el.dataset.rung], t = S.draft.find((x) => x.id === el.dataset.rung);
+      if (!state) return el.replaceChildren();
+      const [mark, word] = RUN_STATES[state];
+      const help = state !== "stopped" ? null : h("button", { class: "info", type: "button", "aria-label": `How to start ${t.name}`, "aria-expanded": "false", "aria-controls": "infoPop",
+        onclick: (e) => { const b = e.currentTarget; if (infoOpen === b) closeInfo(); else openStartHelp(b, t); } }, icon("info"));
+      el.replaceChildren(h("span", { class: "added" }, icon(mark), word), help || "");
+    });
+  }
+  async function checkRungs() {
+    if (!S.settings) return;
+    const mine = ++S.rungCheck;  // an older reply must not overwrite a newer one
+    S.rungState = Object.fromEntries(S.settings.tiers.filter((t) => t.kind === "local").map((t) => [t.id, "checking"]));
+    paintRunState();
+    let rungs = [];
+    try { rungs = (await getJSON("/api/rungs/status")).rungs; } catch (e) { /* no answer, so no status */ }
+    if (mine !== S.rungCheck) return;
+    S.rungState = Object.fromEntries(rungs.map((r) => [r.id, r.running ? "running" : "stopped"]));
+    paintRunState();
   }
   function dirtyFlag() {
     const f = $("dirtyFlag");
@@ -1943,13 +2150,14 @@
     S.picked = card;  // chosen but not saved yet: fillCloudForm leaves the form alone until it is
     showCard(card);
     syncKeyForm(card);
-    if (PRESETS[card]) return fillPreset(card);
-    showMsg($("cloudMsg"), "", "", "");
+    if (PRESETS[card]) fillPreset(card);
+    else showMsg($("cloudMsg"), "", "", "");
     if (card === "custom") {
       for (const id of ["oaiUrl", "oaiModel", "oaiIn", "oaiOut"]) $(id).value = "";
       $("oaiIn").placeholder = "1.25";
       $("oaiOut").placeholder = "4.25";
     }
+    renderCloudDup();
   }
   function fillPreset(id) {
     const p = PRESETS[id];
@@ -1962,7 +2170,7 @@
     showMsg($("cloudMsg"), "ok", `${PROVIDER_NAMES[id]} filled in.`, "Add the prices, save, then add a key.");
   }
   function fillCloudForm() {
-    renderRungWaits();
+    renderCloudRungs();
     const t = cloudTier(S.settings.tiers);
     if (!S.picked) {
       showCard(cardFor(t));
@@ -1973,8 +2181,8 @@
         $("oaiIn").value = t.price_in_per_m; $("oaiOut").value = t.price_out_per_m;
       }
     }
-    $("cloudTierNote").textContent = !t ? "No cloud rung yet. Saving adds one at the end of the ladder."
-      : !t.enabled ? "The cloud rung is off on the Models screen." : "";
+    $("cloudTierNote").textContent = !t ? "No cloud rung yet. Saving adds one at the end of the ladder." : "";
+    renderCloudDup();
     $("cloudLead").hidden = S.cloudAllowed;
     $("cloudLead").textContent = S.cloudAllowed ? "" : desktop() ? "Cloud calls are off until a key is stored on this computer."
       : "Cloud calls are off on this server. Start it with ALLOW_CLOUD=1 to allow them.";
@@ -2033,14 +2241,17 @@
       return;
     }
     for (const k of S.keys) {
-      const uses = k.rungs.length ? `Used by: ${k.rungs.join(", ")}` : "Not used by any rung yet";
+      const uses = !k.rungs.length ? "Not used by any rung yet" : `${k.disabled ? "Waiting for it" : "Used by"}: ${k.rungs.join(", ")}`;
       const asking = S.confirmKey === k.name;
-      list.append(h("li", { class: "keyrow" },
+      list.append(h("li", { class: "keyrow" + (k.disabled ? " off" : "") },
         h("div", { class: "keyhead" },
           h("span", { class: "keyname" }, k.name),
-          h("span", { class: "keystate set" }, icon("key"), h("span", null, "Key set")),
-          h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${k.name}`, "aria-expanded": String(asking),
-                        onclick: () => { S.confirmKey = asking ? null : k.name; renderKeys(); } }, "Remove")),
+          k.disabled ? h("span", { class: "keystate none" }, icon("skip"), h("span", null, "Disabled"))
+            : h("span", { class: "keystate set" }, icon("key"), h("span", null, "Key set")),
+          h("div", { class: "keybtns" },
+            powerBtn(!k.disabled, k.name, () => toggleKey(k)),
+            h("button", { class: "ghost-btn", type: "button", "aria-label": `Remove ${k.name}`, "aria-expanded": String(asking),
+                          onclick: () => { S.confirmKey = asking ? null : k.name; renderKeys(); } }, "Remove"))),
         h("p", { class: "hint" }, `Provider: ${shownLabels(k.provider)}`),
         h("p", { class: "hint" }, uses),
         h("p", { class: "hint" }, S.storedKeys.has(nameKey(k.name)) ? "Stored encrypted on this computer" : "Held in memory for this session only"),
@@ -2084,6 +2295,7 @@
         const stored = !!(res && res.stored === true);
         setSessionOnly(nameKey(name), !stored);
         if (stored) {
+          $("keyNotice").hidden = true;
           S.storedKeys.add(nameKey(name));
           showMsg(msg, "ok", "Key saved.", res.restarting
             ? "Stored encrypted on this computer. Restarting the local server to allow cloud calls…"
@@ -2099,6 +2311,21 @@
       await loadSettings();
     } catch (e) { showMsg(msg, "error", "Key not saved:", shownLabels(e.message)); }
     key = "";
+  }
+  async function toggleKey(k) {
+    const msg = $("keyMsg"), disabled = !k.disabled, did = disabled ? "disabled" : "enabled";
+    try {
+      const r = await post("/api/key/disable", { name: k.name, disabled });
+      showKeys(r.keys);
+    } catch (e) { return showMsg(msg, "error", "Could not change the key:", e.message); }
+    const d = desktop();
+    let kept = !S.storedKeys.has(nameKey(k.name)) || !d || typeof d.setKeyDisabled !== "function";
+    if (!kept) {
+      try { kept = (await d.setKeyDisabled(k.name, disabled)).stored === true; } catch (e) { kept = false; }
+    }
+    if (kept) showMsg(msg, "ok", `${k.name}: ${did}.`);
+    else showMsg(msg, "error", `${k.name}: ${did} for this session only:`, "the desktop app could not store this.");
+    await loadSettings();
   }
   async function removeKey(k) {
     const msg = $("keyMsg");
@@ -2126,6 +2353,11 @@
   }
   async function loadKeys() {
     try { showKeys((await getJSON("/api/key/status")).keys); } catch (e) { /* keep the last known state */ }
+  }
+  if (keysProblem === "aside" || keysProblem === "kept") {
+    if (keysProblem === "kept") INFO.keyfile[1] = "This computer could not decrypt the saved key file, so it was left where it is. If encryption works again, restart the app and the keys may come back. Until then new keys are held for this session only.";
+    $("keyNotice").prepend(icon("warn"));
+    $("keyNotice").hidden = false;
   }
 
   /* ---------- Budget ---------- */
@@ -2221,6 +2453,8 @@
   document.querySelectorAll('input[name="prov"]').forEach((r) => r.addEventListener("change", () => chooseCard(r.value)));
   $("saveCloud").addEventListener("click", () => saveCloud(false));
   $("addCloud").addEventListener("click", () => saveCloud(true));
+  for (const id of ["oaiUrl", "oaiModel"]) $(id).addEventListener("input", renderCloudDup);
+  $("effort").addEventListener("change", renderCloudDup);
   $("saveKey").addEventListener("click", saveKey);
   $("keyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") saveKey(); });
   $("saveBudget").addEventListener("click", saveBudget);
@@ -2228,7 +2462,11 @@
   showScreen();
   renderChecks();
   counts();
-  Promise.all([loadConfig(), loadMemory()]).then(loadSettings).then(() => { setEco(true); loadBudget(); loadStats(); });
+  $("refreshRungs").addEventListener("click", checkRungs);
+  Promise.all([loadConfig(), loadMemory()]).then(loadSettings).then(() => {
+    setEco(true); loadBudget(); loadStats();
+    if (location.hash === "#models") checkRungs();
+  });
   loadTasks();
   loadMeasured();
   setInterval(loadBudget, 30000);
