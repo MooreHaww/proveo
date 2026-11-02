@@ -276,10 +276,11 @@ class PageRules(unittest.TestCase):
         self.assertEqual(set(page_presets()), {"openai", "claude", "gemini"})
         self.assertIn('data-info="provider"', self.page)
 
-    def test_the_old_name_is_only_in_customs_popover(self):
-        self.assertEqual(self.page.count("OpenAI-compatible"), 1)
-        line = next(l for l in self.page.splitlines() if "OpenAI-compatible" in l)
-        self.assertTrue(line.strip().startswith('custom: ["About Custom"'), line)
+    def test_the_old_name_is_only_in_customs_popover_and_quick_setup(self):
+        lines = [l.strip() for l in self.page.splitlines() if "OpenAI-compatible" in l]
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("<li>Start a local model server"), lines[0])
+        self.assertTrue(lines[1].startswith('custom: ["About Custom"'), lines[1])
 
     def test_stored_labels_keep_their_values_under_the_new_names(self):
         select = re.search(r'<select id="keyProvider">(.*?)</select>', self.page).group(1)

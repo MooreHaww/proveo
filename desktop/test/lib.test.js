@@ -421,6 +421,77 @@ function pageCheckTools() {
   return new Function(`${examples}\n${part("codeTaskPrompt")}\n${part("checksToCode")}\n${part("splitCheck")}\n${part("codeToChecks")}\nreturn { EXAMPLES, codeTaskPrompt, checksToCode, splitCheck, codeToChecks };`)();
 }
 
+function pageWordingTools() {
+  const page = fs.readFileSync(path.join(REPO, "web", "index.html"), "utf8");
+  const part = (name) => new RegExp(`  function ${name}\\([\\s\\S]*?\\n  \\}`).exec(page)[0];
+  return new Function(`${part("plainFailure")}\n${part("askProblem")}\nreturn { plainFailure, askProblem };`)();
+}
+
+test("failed check: a crash in a check reads as the error, then the check", () => {
+  const { plainFailure } = pageWordingTools();
+  assert.equal(plainFailure('IndexError: pop from empty list (at tests line 2: assert calc("(2+3)*4") == 20)'),
+               'IndexError: pop from empty list. Failed check: assert calc("(2+3)*4") == 20');
+  assert.equal(plainFailure("ValueError: bad value. (at tests line 1: assert f(1))"), "ValueError: bad value. Failed check: assert f(1)", "no double stop");
+  assert.equal(plainFailure("TypeError: f() (at tests line 1: assert f(g(1)) == (2))"), "TypeError: f(). Failed check: assert f(g(1)) == (2)", "only the wrapper's bracket goes");
+});
+
+test("failed check: a failed assert from a table or code check, and a benchmark's failed row", () => {
+  const { plainFailure } = pageWordingTools();
+  assert.equal(plainFailure("tests line 2: assert f(2) == 2"), "Failed check: assert f(2) == 2");
+  assert.equal(plainFailure("tests line 12: assert f(2) == 2 (a message)"), "Failed check: assert f(2) == 2 (a message)");
+  assert.equal(plainFailure("1 of 2 tests passed; input=[2] expected=2 got=1"), "1 of 2 tests passed. Failed check: input=[2] expected=2 got=1");
+});
+
+test("failed check: a text cut at 300 characters keeps its last bracket, and other texts are left alone", () => {
+  const { plainFailure } = pageWordingTools();
+  const start = "IndexError: x (at tests line 3: assert f(";
+  const cut = (start + "1".repeat(300)).slice(0, 299) + ")";
+  assert.ok(cut.length === 300);
+  assert.ok(plainFailure(cut).endsWith(")"), "that bracket is part of the check");
+  for (const text of ["timed out after 10 s (an infinite loop?)", "the answer's code exited before the tests finished", "NameError: x (at answer line 1: x)", "tests failed"]) {
+    assert.equal(plainFailure(text), text);
+  }
+  assert.doesNotMatch(plainFailure('E: x (at tests line 9: assert 1)'), /tests line/);
+});
+
+test("rung errors: a closed port says Not running on a local rung, with the address", () => {
+  const { askProblem } = pageWordingTools();
+  const win = "ask: URLError(ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it', None, 10061, None))";
+  assert.deepEqual(askProblem(win, true, "192.168.1.14:8080"), ["NOT RUNNING", "cross", "No answer from 192.168.1.14:8080"]);
+  assert.deepEqual(askProblem(win, false, "api.example.test"), ["NO ANSWER", "cross", "No answer from api.example.test"], "a cloud service isn't a server you start");
+  assert.equal(askProblem("ask: URLError(ConnectionRefusedError(111, 'Connection refused'))", true, "h")[0], "NOT RUNNING");
+  assert.equal(askProblem("ask: URLError(OSError(10065, 'A socket operation was attempted to an unreachable host'))", true, "h")[0], "NOT RUNNING");
+});
+
+test("rung errors: each other failure has its own plain words, for urllib and requests", () => {
+  const { askProblem } = pageWordingTools();
+  const cases = [
+    ["ask: TimeoutError('timed out')", "TIMED OUT", "h:1 took too long to answer"],
+    ["ask: URLError(TimeoutError(10060, 'A connection attempt failed'))", "TIMED OUT", "h:1 took too long to answer"],
+    ["ask: ReadTimeout(ReadTimeoutError(\"HTTPSConnectionPool(host='h', port=443): Read timed out. (read timeout=600)\"))", "TIMED OUT", "h:1 took too long to answer"],
+    ["ask: URLError(gaierror(11001, 'getaddrinfo failed'))", "NOT FOUND", "Can't find h:1"],
+    ["ask: ConnectionError(MaxRetryError(\"HTTPSConnectionPool(host='h', port=443): Max retries exceeded (Caused by NameResolutionError('Failed to resolve'))\"))", "NOT FOUND", "Can't find h:1"],
+    ["ask: RemoteDisconnected('Remote end closed connection without response')", "CUT OFF", "h:1 closed the connection"],
+    ["ask: ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)", "CUT OFF", "h:1 closed the connection"],
+    ["ask: <HTTPError 500: 'Internal Server Error'>", "ERROR", "h:1 answered with error 500"],
+    ["ask: HTTPError('401 Client Error: Unauthorized for url: https://h/v1/responses')", "ERROR", "h:1 answered with error 401"],
+    ["ask: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')", "BAD REPLY", "Unexpected reply from h:1"],
+    ["ask: KeyError('choices')", "BAD REPLY", "Unexpected reply from h:1"],
+    ["ask: URLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED]'))", "NO ANSWER", "No secure connection to h:1"],
+    ["ask: SystemExit('Cloud is off. Set an API key and ALLOW_CLOUD=1 first.')", "FAIL", "Could not get an answer from h:1"],
+  ];
+  for (const [raw, status, words] of cases) {
+    const [got, , text] = askProblem(raw, true, "h:1");
+    assert.deepEqual([got, text], [status, words], raw);
+    assert.doesNotMatch(text, /Error|ask:|\(/, "no technical words in the message");
+  }
+});
+
+test("rung errors: a failed check is not a connection problem", () => {
+  const { askProblem } = pageWordingTools();
+  for (const error of ["tests failed", "timeout", "", "check did not start", undefined]) assert.equal(askProblem(error, true, "h"), null);
+});
+
 test("code task: rows build assert lines, and empty rows are left out", () => {
   const { checksToCode, codeTaskPrompt } = pageCheckTools();
   assert.equal(checksToCode([["roman_to_int('XIV')", "14"], ["", "  "], [" f(1) ", " [1, 2] "]]), "assert roman_to_int('XIV') == 14\nassert f(1) == [1, 2]");

@@ -258,6 +258,7 @@
   .metrics b { display: block; font-size: 1.1rem; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 700; }
   .detail { font-size: 0.85rem; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
   .detail code { font-size: 0.8rem; color: var(--ink); }
+  .detail .info { width: 24px; height: 24px; vertical-align: middle; }
   .step { container-type: inline-size; }
   .badge, .metrics b { white-space: nowrap; }
   /* Narrow rungs (four or more in a row): smaller badge and two metric columns, no wrapping. */
@@ -338,8 +339,11 @@
   .money input:focus-visible { outline: none; }
   .money:focus-within { outline: 4px solid var(--chigh); outline-offset: 3px; }
   input[type=range] { width: 100%; accent-color: var(--amber); height: 32px; }
-  .share-val { font-size: 1.3rem; font-weight: 800; }
-  .slider { position: relative; padding-bottom: 34px; }
+  .share-row { display: flex; align-items: flex-start; gap: 10px; }
+  /* Fixed widths and no wrapping, so nothing moves while the slider is dragged. */
+  .share-val { flex: none; width: 3.6em; line-height: 32px; text-align: right; white-space: nowrap; font-size: 1.3rem; font-weight: 800; }
+  .share-same { display: inline-block; width: 3.2em; text-align: center; white-space: nowrap; }
+  .slider { position: relative; flex: 1; min-width: 0; padding-bottom: 34px; }
   .marker { position: absolute; top: 26px; left: calc(8px + (100% - 16px) * var(--p, 0)); }
   .marker .tick { position: absolute; left: -1.5px; top: -10px; width: 3px; height: 16px; background: var(--ink); border-radius: 2px; }
   .marker .mlabel { position: absolute; top: 8px; white-space: nowrap; font-size: 0.8rem; font-weight: 700; color: var(--ink); }
@@ -347,6 +351,7 @@
   .marker.left .mlabel { left: -4px; }
   .result { border-left: 6px solid var(--amber); padding-left: 18px; }
   .result .big { font-size: 2.5rem; }
+  .result .big small { display: block; }  /* its own line at every value: "$100.00 / month" would wrap where "$99.90 / month" fits */
 
   /* Models screen */
   .found { margin-top: 14px; display: grid; gap: 12px; }
@@ -664,13 +669,16 @@
               <div class="money"><span>$</span><input id="spend" type="number" min="0" step="10" value="100" inputmode="decimal"></div>
             </div>
             <div>
-              <label for="share">Share of tasks solved locally: <span class="share-val num" id="shareVal">…</span></label>
-              <div class="slider">
-                <input id="share" type="range" min="0" max="100" step="0.1" value="30" aria-describedby="measuredLabel">
-                <div class="marker" id="measuredMark" hidden>
-                  <span class="tick" aria-hidden="true"></span>
-                  <span class="mlabel" id="measuredLabel"></span>
+              <label for="share">Share of tasks solved locally</label>
+              <div class="share-row">
+                <div class="slider">
+                  <input id="share" type="range" min="0" max="100" step="0.1" value="30" aria-describedby="measuredLabel">
+                  <div class="marker" id="measuredMark" hidden>
+                    <span class="tick" aria-hidden="true"></span>
+                    <span class="mlabel" id="measuredLabel"></span>
+                  </div>
                 </div>
+                <span class="share-val num" id="shareVal">…</span>
               </div>
             </div>
             <div class="result">
@@ -824,10 +832,21 @@
           <p>Proveo gives a coding task to the cheapest model you have and runs the answer against your tests. If the answer fails, the next model up gets the task. A more expensive model is only called when the cheaper ones could not pass.</p>
         </section>
         <section class="block card">
+          <h2>Quick setup</h2>
+          <ol>
+            <li>Start a local model server on this computer or another machine on your network. Any server with an OpenAI-compatible address works.</li>
+            <li>Make sure it is running.</li>
+            <li>Open Models and press Detect local models. It checks this computer only, for Ollama (port 11434), LM Studio (port 1234) and llama.cpp (ports 8080 and 8081). It does not scan your network. For another machine or port, enter its address under Add a machine by address and press Probe. Then press Add as rung on the models you want.</li>
+            <li>Put your rungs in order, cheapest first, and press Save ladder.</li>
+            <li>Optional: in Cloud and Budget, add a cloud rung, store a key and set a monthly limit. Cloud stays off until a key is stored.</li>
+            <li>On Run, pick a benchmark task or write a Code task with your own checks. Proveo stops at the cheapest rung that passes.</li>
+          </ol>
+        </section>
+        <section class="block card">
           <h2>How it works</h2>
           <ol>
             <li>Verified memory. An exact repeat of a task reuses a stored answer, and that answer is checked against the tests again.</li>
-            <li>Your local models, in the order you set. For example a Raspberry Pi 5, then a PC with a GPU.</li>
+            <li>Your local models, in the order you set.</li>
             <li>The cloud, last unless you move it. It is only called if every rung before it failed, and only while the monthly budget allows.</li>
           </ol>
           <p>The first answer that passes your tests wins, and no rung after it is called.</p>
@@ -847,7 +866,7 @@
           <h2>Honest limits</h2>
           <ul>
             <li>The measured numbers come from small benchmark coding tasks, one run each.</li>
-            <li>The Pi's answers vary between runs. A failed answer is caught by the tests and escalated.</li>
+            <li>Local model answers can vary between runs. A failed answer is caught by the tests and escalated.</li>
             <li>The code check runs in a subprocess with a time limit. It is not a real sandbox, and the code a model writes runs on this computer.</li>
             <li>Weak tests let a wrong answer pass.</li>
             <li>Savings figures are estimates unless marked as measured.</li>
@@ -997,7 +1016,7 @@
     avoided: ["About the savings estimate", "An estimate of what the cloud would have charged for tasks solved locally. It is not a measured saving."],
     measured: ["About the measured figure", "Measured on small coding tasks, one run each."],
     projection: ["About the savings projection", "A projection, not a measurement. It assumes local tasks would have cost the average cloud price, and ignores electricity and hardware. The marker is the measured share. Real work will be lower."],
-    find: ["About finding models", "Asks Ollama (port 11434), LM Studio (1234) and llama.cpp (8080, 8081) on this computer which models they serve. It only reads. Use an address for another machine, such as a Raspberry Pi."],
+    find: ["About finding models", "Asks Ollama (port 11434), LM Studio (1234) and llama.cpp (8080, 8081) on this computer which models they serve. It only reads. Use an address for another machine."],
     provider: ["About the provider choice", "Only Meta Muse Spark has been tested in this app."],
     custom: ["About Custom", "For any server that speaks the OpenAI-compatible chat format. Add its base URL, model and prices."],
     presets: ["About presets and prices", "A preset fills in the URL and model. Prices let the budget count this provider's spend: see the provider's pricing page."],
@@ -1200,10 +1219,48 @@
   function budgetLink() {
     return [document.createTextNode("budget limit reached · "), h("a", { href: "#cloud" }, "Cloud and Budget")];
   }
-  const plainFailure = (text) => text.replace(/^tests line \d+: /, "");
+  // The checker's failure text in plain words. The page holds it only while showing it: the log never gets it.
+  function plainFailure(text) {
+    const crashed = /^(.*?) \(at tests line \d+: (.*)$/.exec(text);
+    if (crashed) {
+      const check = text.length < 300 ? crashed[2].replace(/\)$/, "") : crashed[2];  // at 300 it was cut, with no ")"
+      return `${crashed[1].replace(/[.!?:]$/, "")}. Failed check: ${check}`;
+    }
+    const table = /^(\d+ of \d+ tests passed); (input=.*)$/.exec(text);
+    if (table) return `${table[1]}. Failed check: ${table[2]}`;
+    return text.replace(/^tests line \d+: /, "Failed check: ");
+  }
+  // A rung whose call failed ("ask: <raw error>"), in plain words: [status, icon, message]. Null for any other error.
+  function askProblem(error, local, where) {
+    if (!/^ask: /.test(error || "")) return null;
+    const http = /HTTPError\D{0,4}(\d{3})\b/.exec(error);
+    if (http) return ["ERROR", "cross", `${where} answered with error ${http[1]}`];
+    if (/SSL|CERTIFICATE/.test(error)) return ["NO ANSWER", "cross", `No secure connection to ${where}`];
+    if (/gaierror|getaddrinfo|NameResolution|Name or service|11001/.test(error)) return ["NOT FOUND", "cross", `Can't find ${where}`];
+    if (/timed out|Timeout|10060/.test(error)) return ["TIMED OUT", "wait", `${where} took too long to answer`];
+    if (/Refused|refused|unreachable|10061|10051|10065/.test(error)) return [local ? "NOT RUNNING" : "NO ANSWER", "cross", `No answer from ${where}`];
+    if (/RemoteDisconnected|Reset|ConnectionAborted|Connection aborted|BrokenPipe|IncompleteRead|10053|10054/.test(error)) return ["CUT OFF", "cross", `${where} closed the connection`];
+    if (/JSONDecodeError|KeyError|IndexError|TypeError|AttributeError/.test(error)) return ["BAD REPLY", "cross", `Unexpected reply from ${where}`];
+    return ["FAIL", "cross", `Could not get an answer from ${where}`];
+  }
+  function openRawError(btn, raw) {
+    closeInfo();
+    closeColor();
+    infoOpen = btn;
+    btn.setAttribute("aria-expanded", "true");
+    $("infoPop").hidden = false;
+    $("infoPop").replaceChildren(h("pre", { class: "codeblock" }, h("code", null, raw)));
+    placeInfo();
+  }
+  function rawErrorButton(error) {
+    const raw = error.replace(/^ask: /, "");
+    return h("button", { class: "info", type: "button", "aria-label": "Technical detail", "aria-expanded": "false", "aria-controls": "infoPop",
+      onclick: (e) => { const b = e.currentTarget; if (infoOpen === b) closeInfo(); else openRawError(b, raw); } }, icon("info"));
+  }
   function setStep(tier, cls, label, iconName, detail, attempt) {
     const el = tier === "memory" ? document.querySelector('[data-tier="memory"]') : rungEls[tier];
     if (!el) return;
+    if (infoOpen && el.contains(infoOpen)) closeInfo();  // its button is about to be replaced
     el.className = (tier === "memory" ? "memory " : "step ") + cls;
     const badge = el.querySelector(".badge");
     badge.replaceChildren(icon(iconName), h("span", null, label));
@@ -1263,7 +1320,9 @@
     else memoryIdle();
     for (const t of tiers) {
       const a = job.attempts.find((x) => x.tier === t.id);
+      const problem = a && !a.passed && askProblem(a.error, t.kind === "local", host(t.base_url));
       if (!order.includes(t.id)) setStep(t.id, "bypassed", "BYPASSED", "skip", "Eco mode is off");
+      else if (problem) setStep(t.id, "fail", problem[0], problem[1], [problem[2], rawErrorButton(a.error)], a);
       else if (a) setStep(t.id, a.passed ? "pass" : "fail", a.passed ? "PASS" : "FAIL", a.passed ? "check" : "cross",
                           a.passed ? "All tests passed" : plainFailure(a.first_failure || a.error || "Tests failed"), a);
       else if (job.current === t.id) setStep(t.id, "running", "RUNNING", "spin", "Generating and testing…");
@@ -1527,7 +1586,7 @@
     $("answerState").replaceChildren(icon(passed ? "check" : "cross"), passed ? "PASS" : "FAIL");
     $("answerTitle").textContent = passed ? `Passing code from ${from}` : a ? `No rung passed. Last answer, from ${from}` : "No rung gave an answer";
     $("answerFail").hidden = passed || !a;
-    $("answerFail").textContent = a && !passed ? `Failed check: ${plainFailure(a.first_failure)}` : "";
+    $("answerFail").textContent = a && !passed ? plainFailure(a.first_failure) : "";
     $("answerBlock").hidden = !a;
     $("copyAnswer").hidden = !a;
     $("copyAnswer").textContent = "Copy";
@@ -1604,7 +1663,7 @@
       const pct = 100 * m.local_share;
       S.measuredShare = pct;
       $("localShare").textContent = pct.toFixed(1) + "%";
-      $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved locally (Pi or PC)`;
+      $("localLine").textContent = `${m.local_solved} of ${m.total_tasks} benchmark tasks solved locally`;
       const rows = [
         [shades().EFFORT_BLUE.minimal, `Always cloud, minimal (${m.always_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.always_cloud_minimal.cost_usd)],
         ["var(--amber)", `PC then cloud, minimal (${m.pc_then_cloud_minimal.solved}/${m.heldout_tasks})`, money(m.pc_then_cloud_minimal.cost_usd)],
@@ -1627,7 +1686,7 @@
     const share = parseFloat($("share").value) || 0;
     const shareText = share.toFixed(share % 1 ? 1 : 0) + "%";
     $("shareVal").textContent = shareText;
-    $("savingHead").textContent = `If ${shareText} of your tasks run locally, estimated saving`;
+    $("savingHead").replaceChildren("If ", h("span", { class: "share-same num" }, shareText), " of your tasks run locally, estimated saving");
     $("saving").replaceChildren("$" + (spend * share / 100).toFixed(2), h("small", null, " / month"));
   }
   async function loadTasks() {

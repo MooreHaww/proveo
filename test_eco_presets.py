@@ -3,6 +3,7 @@
 Fake model servers on random 127.0.0.1 ports, made-up keys and temp folders only. No real models,
 no cloud calls. Run with: python -m unittest -v test_eco_presets
 """
+import inspect
 import json
 import os
 import re
@@ -13,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 import bench_coding
+import detect
 import eco_core
 import settings
 from test_eco_server import GOOD, BAD
@@ -274,17 +276,50 @@ class PageCopy(unittest.TestCase):
 
     def test_the_about_page_has_its_sections_in_order(self):
         self.assertEqual(re.findall(r"<h2>(.*?)</h2>", self.about()),
-                         ["What it is", "How it works", "What it works for", "Honest limits", "Your keys and your data", "Version"])
+                         ["What it is", "Quick setup", "How it works", "What it works for", "Honest limits", "Your keys and your data", "Version"])
 
     def test_the_about_page_keeps_the_honest_limits(self):
         about = self.about()
-        for line in ("small benchmark coding tasks, one run each", "The Pi's answers vary between runs", "It is not a real sandbox",
+        for line in ("small benchmark coding tasks, one run each", "Local model answers can vary between runs", "It is not a real sandbox",
                      "Weak tests let a wrong answer pass", "Savings figures are estimates unless marked as measured",
                      "encrypted on this computer", "held in memory only", "It does not keep your description, your checks or the answers", "not see your provider's account"):
             self.assertIn(line, about)
 
+    def test_the_page_names_no_raspberry_pi_in_its_copy(self):
+        copy = re.sub(r"(^|\s)//.*", "", self.page.split("</style>")[1])  # code comments are not copy
+        self.assertEqual(re.findall(r"Raspberry|\bPi\b", copy), [])
+
+    def quick_setup(self):
+        section = self.about().split("<h2>Quick setup</h2>")[1].split("</section>")[0]
+        return re.findall(r"<li>(.*?)</li>", section)
+
+    def test_quick_setup_has_its_six_points(self):
+        points = self.quick_setup()
+        self.assertEqual(len(points), 6)
+        self.assertIn("OpenAI-compatible address", points[0])
+        self.assertIn("cheapest first", points[3])
+        self.assertIn("Cloud stays off until a key is stored", points[4])
+        self.assertIn("Proveo stops at the cheapest rung that passes", points[5])
+
+    def test_quick_setup_says_what_detect_really_does(self):
+        point = self.quick_setup()[2]
+        for kind, port, _ in detect.KNOWN_SERVERS:
+            self.assertIn(kind, point)
+            self.assertIn(str(port), point)
+        self.assertEqual(sorted(int(n) for n in re.findall(r"\d{4,5}", point)), sorted(p for _, p, _ in detect.KNOWN_SERVERS))
+        self.assertIn("this computer only", point)
+        self.assertIn("does not scan your network", point)
+        self.assertEqual(inspect.signature(detect.detect_local).parameters["host"].default, "127.0.0.1")
+
+    def test_quick_setup_names_controls_that_exist(self):
+        screen = self.page.split('id="screen-models"')[1].split('id="screen-cloud"')[0]
+        for word in ("Detect local models", "Add a machine by address", ">Probe<", "Save ladder"):
+            self.assertIn(word, screen)
+        self.assertIn('"Add as rung"', self.page)
+        self.assertIn(">Code task<", self.page)
+
     def test_the_about_page_has_no_provider_status(self):
-        lower = self.about().lower()
+        lower = self.about().lower().replace("any server with an openai-compatible address works", "")  # Quick setup, about servers
         for word in ("untested", "has been tested", "muse spark", "openai", "anthropic", "gemini"):
             self.assertNotIn(word, lower)
 

@@ -353,10 +353,39 @@ class PageRules(unittest.TestCase):
         style = self.page.split("<style>")[1].split("</style>")[0]
         self.assertEqual(re.findall(r"opacity: *\.?[1-9][^;]*;", style), [], "opacity would take text under its contrast")
 
-    def test_rung_cards_and_the_answer_card_drop_the_tests_line_prefix(self):
-        self.assertEqual(self.script.count("tests line"), 1, "one helper")
+    def test_rung_cards_and_the_answer_card_share_one_wording_for_a_failed_check(self):
+        self.assertEqual(self.script.count("tests line"), 2, "only inside plainFailure's two patterns")
+        helper = self.script.split("function plainFailure(text)")[1].split("function askProblem")[0]
+        self.assertEqual(helper.count("tests line"), 2)
         self.assertIn('plainFailure(a.first_failure || a.error || "Tests failed")', self.script)
-        self.assertIn("Failed check: ${plainFailure(a.first_failure)}", self.script)
+        self.assertIn('$("answerFail").textContent = a && !passed ? plainFailure(a.first_failure) : "";', self.script)
+        self.assertNotIn("`Failed check: ${plainFailure", self.script, "the helper says it once")
+
+    def test_a_rung_that_cannot_be_reached_has_plain_words_and_the_raw_text_behind_an_info_button(self):
+        self.assertIn('setStep(t.id, "fail", problem[0], problem[1], [problem[2], rawErrorButton(a.error)], a)', self.script)
+        self.assertIn('askProblem(a.error, t.kind === "local", host(t.base_url))', self.script)
+        button = self.script.split("function rawErrorButton(error)")[1].split("function setStep")[0]
+        self.assertIn('class: "info"', button)
+        self.assertIn('"aria-label": "Technical detail"', button)
+        self.assertIn('h("pre", { class: "codeblock" }, h("code", null, raw))', self.script, "text only, never markup")
+
+    def test_the_slider_value_sits_beside_the_slider_in_a_fixed_box_that_cannot_wrap(self):
+        calc = self.page.split('<div class="calc">')[1].split('<div class="result">')[0]
+        self.assertNotIn("shareVal", calc.split("</label>", 2)[1].split('<div class="share-row">')[0])
+        row = calc.split('<div class="share-row">')[1]
+        self.assertLess(row.index('id="share"'), row.index('id="shareVal"'))
+        self.assertIn('<span class="share-val num" id="shareVal">', row, "tabular numbers")
+        self.assertNotIn("shareVal", calc.split('for="share"')[1].split("</label>")[0], "not in the label")
+        style = self.page.split("<style>")[1].split("</style>")[0]
+        rule = re.search(r"\.share-val \{([^}]*)\}", style).group(1)
+        self.assertRegex(rule, r"(^|[; ])width: *[\d.]+em")
+        self.assertIn("flex: none", rule)
+        self.assertIn("white-space: nowrap", rule)
+        same = re.search(r"\.share-same \{([^}]*)\}", style).group(1)
+        self.assertRegex(same, r"(^|[; ])width: *[\d.]+em")
+        self.assertIn("white-space: nowrap", same)
+        self.assertIn('h("span", { class: "share-same num" }, shareText)', self.script, "the sentence beside it stays put too")
+        self.assertIn(".result .big small { display: block; }", style, "and the saving keeps its two lines")
 
 
 if __name__ == "__main__":
