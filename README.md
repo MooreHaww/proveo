@@ -144,7 +144,7 @@ cd desktop
 npm run dist
 ```
 
-The installer is per-user, so it needs no administrator rights, and it installs to `%LOCALAPPDATA%\Programs\Proveo`. The installed app keeps its settings, encrypted keys, spend log and verified memory in `%APPDATA%\Proveo`; uninstalling leaves that folder in place. A profile from an earlier install in `%APPDATA%\Eco` moves there once, if the new folder does not exist yet. `npm start` keeps its own data in `%APPDATA%\pi-edge-router-desktop`. Neither writes to `results/`, so their budgets are separate from `eco_server.py` run by hand.
+The installer is per-user, so it needs no administrator rights, and it installs to `%LOCALAPPDATA%\Programs\proveo-desktop`. The installed app keeps its settings, encrypted keys, spend log and verified memory in `%APPDATA%\Proveo`; uninstalling leaves that folder in place. A profile from an earlier install in `%APPDATA%\Eco` moves there once, if the new folder does not exist yet. `npm start` keeps its own data in `%APPDATA%\pi-edge-router-desktop`. Neither writes to `results/`, so their budgets are separate from `eco_server.py` run by hand.
 
 The installer is not code-signed, so Windows warns about it. On "Windows protected your PC", choose **More info**, check the file is the one you built, then **Run anyway**. Antivirus tools may also flag or slow an unsigned app, in which case restore the file or allow that one file; turn nothing off. The code check runs in a separate process with a time limit, closed stdin and no API key. It is not a real sandbox.
 
